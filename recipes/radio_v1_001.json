@@ -1,0 +1,56 @@
+{
+  "recipe_id": "Radio_v1_001",
+  "name": "Artist/Song Radio — Similar-Style Discovery Mix",
+  "user_parameters": {
+    "seed_name": "{{RADIO_SEED}}",
+    "desired_track_count": "{{DESIRED_TRACK_COUNT}}"
+  },
+  "llm_config": {
+    "max_output_tokens": 16000,
+    "temperature": 0.7
+  },
+  "model_instructions": "You are a world-class radio programmer building a 'Radio' station seeded from {{RADIO_SEED}}, mimicking the flow of a major streaming service's artist/song radio. You will select {{DESIRED_TRACK_COUNT}} tracks from the supplied candidate pool (drawn from the listener's own library: the seed artist plus similar-style artists).\n\nCURATION RULES:\n1. STYLE COHERENCE: Every track must sit comfortably in the same sonic world as the seed {{RADIO_SEED}} — comparable genre, mood, era feel and energy. Use your own musical knowledge of how these artists relate.\n2. POPULARITY MATTERS: Favour well-known, high play_count tracks and tracks with local_library_likes=true, but blend in a few deeper cuts so it does not feel like a greatest-hits list.\n3. RELEASE DATE BALANCE: Spread the selection across release years so the station feels current yet rooted — avoid clustering everything in one year.\n4. ARTIST & ALBUM DIVERSITY: Do not play the same artist twice in a row and never more than {{MATH:max(2,ceil(DESIRED_TRACK_COUNT*0.2))}} tracks from any single artist. The album of the current track MUST NOT match the album of the previous track.\n5. FLOW: Open with 2-3 recognisable, on-theme tracks and sequence for smooth energy transitions.\n\nALBUM SUGGESTIONS (SEPARATE FROM THE PLAYLIST):\nUsing your own musical knowledge, also recommend 3-5 albums by artists in a similar style to {{RADIO_SEED}} that are a natural fit for this station but are NOT present in the candidate pool (i.e. gaps in the listener's library worth filling). Do not invent releases — only suggest real, well-known albums.\n\nRespond ONLY with JSON in this exact shape: {\"track_ids\": [id1, id2, ...], \"reasoning\": \"An engaging ~280 character summary of the station in the style of a magazine review.\", \"album_suggestions\": [{\"artist\": \"Artist Name\", \"album\": \"Album Title\", \"year\": 2011, \"reason\": \"One short sentence on why it fits.\"}]}. For each track_id return ONLY the integer index, never the title or other metadata.",
+  "global_strategy": {
+    "final_track_count": "{{DESIRED_TRACK_COUNT}}",
+    "tie_breaker_priority": ["style_similarity", "local_library_likes", "play_count", "release_year"],
+    "weights": {
+      "style_similarity": 0.5,
+      "play_count": 0.3,
+      "release_year": 0.2,
+      "local_library_likes": 0.0
+    },
+    "waiting": {
+      "max_tracks_consecutive_artist": 1,
+      "max_tracks_per_artist": "{{MATH:max(2,ceil(DESIRED_TRACK_COUNT*0.2))}}",
+      "min_artists_represented": "{{MATH:max(4,ceil(DESIRED_TRACK_COUNT*0.3))}}"
+    }
+  },
+  "processing_steps": [
+    {
+      "step_id": 1,
+      "title": "Core Station Identity (Top Priority)",
+      "priority_score": 10,
+      "target_track_count": "{{MATH:ceil(DESIRED_TRACK_COUNT*0.4)}}",
+      "description": "Anchor the station with the strongest, most on-theme and most-played tracks closest in style to the seed.",
+      "filters": [
+        {"field": "play_count", "operator": "GREATER_THAN", "value": 3}
+      ]
+    },
+    {
+      "step_id": 2,
+      "title": "Similar-Style Breadth (Mid Priority)",
+      "priority_score": 7,
+      "target_track_count": "{{MATH:ceil(DESIRED_TRACK_COUNT*0.4)}}",
+      "description": "Widen the station with tracks from similar-style artists to keep it fresh while staying on-theme.",
+      "filters": []
+    },
+    {
+      "step_id": 3,
+      "title": "Deep Cuts & Era Spread (Diversity/Lowest Priority)",
+      "priority_score": 4,
+      "target_track_count": "{{MATH:ceil(DESIRED_TRACK_COUNT*0.2)}}",
+      "description": "Fill the remainder with lesser-played tracks that broaden the release-year range without breaking the mood.",
+      "filters": []
+    }
+  ]
+}

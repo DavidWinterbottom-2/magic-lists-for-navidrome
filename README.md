@@ -7,6 +7,7 @@ MagicLists adds the kind of curated, evolving playlists you’d expect from Spot
 ## What it does
 - 🎵 **This Is (Artist)** — Builds a definitive playlist for any artist in your library, combining hits, deep cuts, and featured appearances without duplicates.
 - 🎸 **Genre Mix** — Creates curated playlists from your complete genre collections, using AI to craft the perfect mix of tracks.
+- 📻 **Radio** — Start a station from an artist *or* a song. Pools similar-style tracks from your library (the seed artist plus similar artists), weighs popularity and release date for a Spotify-like flow, and suggests albums by fitting artists you don't own yet.
 - 🔄 **Re-Discover** — Rotates tracks you haven't played in a while, helping you fall back in love with your collection.
 - ⏰ **Auto-Refresh** — Keep playlists fresh with daily, weekly, or monthly updates.
 - 🐳 **Quick Setup** — Simple Docker install; get started in minutes.
@@ -217,7 +218,9 @@ If checks fail, detailed suggestions are provided to help resolve issues. You ca
 
 - `GET /` - Web interface
 - `GET /api/artists` - List all artists from Navidrome
+- `GET /api/songs?q=<query>` - Search songs (used as a Radio seed)
 - `POST /api/create_playlist` - Create a new "This Is" playlist
+- `POST /api/create_radio_playlist` - Create a Radio station from an artist or song seed
 - `POST /api/create_playlist_with_reasoning` - Create playlist with detailed reasoning
 - `GET /api/rediscover-weekly` - Generate Re-Discover Weekly recommendations
 - `POST /api/create-rediscover-playlist` - Create Re-Discover Weekly playlist in Navidrome

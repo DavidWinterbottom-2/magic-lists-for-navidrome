@@ -25,6 +25,22 @@ class CreateGenrePlaylistRequest(BaseModel):
     playlist_length: int = 25  # Number of tracks to include
     library_ids: List[str] = []  # List of library IDs to filter tracks
 
+class CreateRadioPlaylistRequest(BaseModel):
+    """Request schema for creating a Radio playlist seeded from an artist or song"""
+    seed_type: str = "artist"  # "artist" or "song"
+    seed_id: str  # Navidrome artist ID or song ID depending on seed_type
+    playlist_name: Optional[str] = None  # Optional, auto-generated if not provided
+    refresh_frequency: str = "none"  # "none", "daily", "weekly", "monthly"
+    playlist_length: int = 25  # Number of tracks to include
+    library_ids: List[str] = []  # List of library IDs to filter tracks
+
+class AlbumSuggestion(BaseModel):
+    """Schema for a suggested album not currently in the library"""
+    artist: str
+    album: str
+    year: Optional[int] = None
+    reason: Optional[str] = None
+
 class Playlist(BaseModel):
     """Schema for a stored playlist"""
     id: int

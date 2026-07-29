@@ -1009,6 +1009,203 @@ Return JSON: {{"track_ids": [indices], "reasoning": "summary"}}"""
         else:
             return track_ids
 
+    async def curate_radio(
+        self,
+        seed_name: str,
+        tracks_json: List[Dict[str, Any]],
+        num_tracks: int = 25,
+        include_reasoning: bool = True,
+        variety_context: Optional[str] = None
+    ) -> Tuple[List[str], str, List[Dict[str, Any]]]:
+        """Curate a 'Radio' playlist seeded from an artist or song using AI.
+
+        Unlike the other curators this always returns a triple of
+        (track_ids, reasoning, album_suggestions) because Radio additionally asks
+        the model to recommend similar-style albums that are NOT in the library.
+
+        Args:
+            seed_name: Human-readable seed label (e.g. "Radiohead" or "Karma Police — Radiohead")
+            tracks_json: Candidate tracks with id, title, artist, album, year, genre, play_count
+            num_tracks: Number of tracks to select
+            include_reasoning: Retained for signature parity (reasoning always returned)
+            variety_context: Additional context for refreshes (optional)
+
+        Returns:
+            Tuple of (track_ids in curated order, reasoning string, album_suggestions list)
+        """
+
+        # Fallback when no AI is configured: pick by popularity, no album suggestions
+        if not self.api_key and self.provider.provider_type == "openrouter":
+            print(f"❌ No AI API key configured, using fallback radio curation for {seed_name}")
+            return self._fallback_radio_selection(tracks_json, num_tracks, "No AI API key configured.")
+
+        try:
+            # SHUFFLE tracks to prevent AI from grouping based on input order
+            import random
+            shuffled_tracks = tracks_json.copy()
+            random.shuffle(shuffled_tracks)
+
+            print(f"🎵 Preparing {len(shuffled_tracks)} candidate tracks for Radio curation ({seed_name})")
+
+            recipe_inputs = {
+                "radio_seed": seed_name,
+                "num_tracks": num_tracks,
+                "variety_context": variety_context or ""
+            }
+
+            final_recipe = recipe_manager.apply_recipe("radio", recipe_inputs, include_reasoning)
+
+            llm_config = final_recipe.get("llm_config", {})
+            model_instructions = final_recipe.get("model_instructions", "")
+
+            model = self.model or "openai/gpt-3.5-turbo"
+            temperature = llm_config.get("temperature", 0.7)
+            max_tokens = llm_config.get("max_output_tokens", 16000)
+
+            print(f"🤖 Using AI model: {model} (from {self.provider.provider_type} provider)")
+
+            # Build index-based tracks (avoids leaking/duplicating complex IDs)
+            indexed_tracks = []
+            track_id_map = []
+            for index, track in enumerate(shuffled_tracks):
+                track_id_map.append(track["id"])
+                indexed_tracks.append({
+                    "index": index,
+                    "track_name": track.get("title", "Unknown"),
+                    "artist": track.get("artist", "Unknown"),
+                    "album": track.get("album", "Unknown"),
+                    "year": track.get("year", 0),
+                    "genre": track.get("genre", "Unknown"),
+                    "play_count": track.get("play_count", 0),
+                    "local_library_likes": track.get("local_library_likes", False)
+                })
+
+            print(f"🔢 Using index-based approach for {len(track_id_map)} tracks")
+
+            variety_note = f"\n\n{variety_context}" if variety_context else ""
+            user_content = f"""Build a "{seed_name} Radio" station of up to {num_tracks} tracks from the candidates below, and suggest similar-style albums NOT in the library.{variety_note}
+
+Tracks: {json.dumps(indexed_tracks, separators=(',', ':'), ensure_ascii=False)}
+
+Return JSON: {{"track_ids": [indices], "reasoning": "summary", "album_suggestions": [{{"artist": "...", "album": "...", "year": 2011, "reason": "..."}}]}}"""
+
+            content = await self.provider.generate(
+                system_prompt=model_instructions,
+                user_prompt=user_content,
+                max_tokens=max_tokens,
+                temperature=temperature
+            )
+
+            print(f"🤖 FULL RAW AI RESPONSE for Radio: {content}")
+
+            # Parse the JSON response
+            try:
+                cleaned_content = content.strip()
+                if cleaned_content.startswith("```json"):
+                    cleaned_content = cleaned_content[7:]
+                if cleaned_content.startswith("```"):
+                    cleaned_content = cleaned_content[3:]
+                if cleaned_content.endswith("```"):
+                    cleaned_content = cleaned_content[:-3]
+                cleaned_content = cleaned_content.strip()
+
+                import re
+                # Radio responses contain nested objects, so grab the outermost JSON object
+                json_object_match = re.search(r'\{.*"track_ids".*\}', cleaned_content, re.DOTALL)
+                json_str = json_object_match.group(0) if json_object_match else cleaned_content
+
+                response_data = json.loads(json_str)
+
+                if not isinstance(response_data, dict) or "track_ids" not in response_data:
+                    raise ValueError("Invalid response format: expected dict with track_ids")
+
+                track_indices = response_data.get("track_ids", [])
+                reasoning = response_data.get("reasoning", "")
+                album_suggestions = response_data.get("album_suggestions", [])
+
+                if not isinstance(track_indices, list):
+                    raise ValueError("Response structure invalid: track_ids must be a list")
+                if not all(isinstance(tid, int) for tid in track_indices):
+                    raise ValueError("Invalid track_ids format: all IDs must be integers (indices)")
+                if not track_indices:
+                    raise ValueError("AI response validation failed: No tracks returned")
+
+                # Map valid indices back to actual track IDs, preserving order and dropping dupes
+                seen = set()
+                mapped_track_ids = []
+                for idx in track_indices:
+                    if 0 <= idx < len(track_id_map):
+                        tid = track_id_map[idx]
+                        if tid not in seen:
+                            seen.add(tid)
+                            mapped_track_ids.append(tid)
+
+                final_selection = mapped_track_ids[:num_tracks]
+
+                # Sanitise album suggestions to the expected shape
+                clean_suggestions = self._sanitise_album_suggestions(album_suggestions)
+
+                print(f"✅ Radio curation successful: {len(final_selection)} tracks, {len(clean_suggestions)} album suggestions")
+
+                return final_selection, reasoning, clean_suggestions
+
+            except (json.JSONDecodeError, ValueError) as e:
+                print(f"Failed to parse Radio AI response: {e}")
+                print(f"Response content: {content}")
+                return self._fallback_radio_selection(tracks_json, num_tracks, f"AI response could not be parsed: {e}")
+
+        except httpx.RequestError as e:
+            print(f"🌐 Network error calling AI API: {e}")
+            return self._fallback_radio_selection(tracks_json, num_tracks, f"Network error: {e}")
+        except httpx.HTTPStatusError as e:
+            print(f"🚨 HTTP error from AI API: {e.response.status_code}")
+            return self._fallback_radio_selection(tracks_json, num_tracks, f"HTTP {e.response.status_code}")
+        except Exception as e:
+            print(f"💥 Unexpected error in Radio AI curation: {e}")
+            import traceback
+            print(f"📋 Traceback: {traceback.format_exc()}")
+            return self._fallback_radio_selection(tracks_json, num_tracks, f"Unexpected error: {e}")
+
+    def _sanitise_album_suggestions(self, suggestions: Any) -> List[Dict[str, Any]]:
+        """Validate/normalise the AI's album suggestions into a predictable shape."""
+        if not isinstance(suggestions, list):
+            return []
+
+        clean = []
+        for item in suggestions:
+            if not isinstance(item, dict):
+                continue
+            artist = str(item.get("artist", "")).strip()
+            album = str(item.get("album", "")).strip()
+            if not artist or not album:
+                continue
+            clean.append({
+                "artist": artist,
+                "album": album,
+                "year": item.get("year"),
+                "reason": str(item.get("reason", "")).strip()
+            })
+        return clean[:5]
+
+    def _fallback_radio_selection(
+        self,
+        tracks_json: List[Dict[str, Any]],
+        num_tracks: int,
+        error_reason: str = "AI service was unavailable"
+    ) -> Tuple[List[str], str, List[Dict[str, Any]]]:
+        """Fallback radio selection: sort by play count, no album suggestions."""
+        sorted_tracks = sorted(
+            tracks_json,
+            key=lambda x: x.get("play_count", 0),
+            reverse=True
+        )
+        track_ids = [track["id"] for track in sorted_tracks[:num_tracks]]
+        reasoning = (
+            f"Fallback curation: selected the top {len(track_ids)} candidate tracks by play count. "
+            f"Album suggestions require an AI provider. {error_reason}"
+        )
+        return track_ids, reasoning, []
+
     async def close(self):
         """Close the HTTP client"""
         try:

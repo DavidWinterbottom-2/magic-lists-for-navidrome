@@ -131,6 +131,8 @@ class RecipeManager:
                 replacements["{{TARGET_ARTIST}}"] = str(inputs["artists"])
             if "genre" in inputs:
                 replacements["{{TARGET_GENRE}}"] = str(inputs["genre"])
+            if "radio_seed" in inputs:
+                replacements["{{RADIO_SEED}}"] = str(inputs["radio_seed"])
             if "num_tracks" in inputs:
                 replacements["{{DESIRED_TRACK_COUNT}}"] = str(inputs["num_tracks"])
             
