@@ -163,9 +163,14 @@ cython_debug/
 tmp_*venv/
 test_env/
 tmp_rovodev_validate_docker.py
-.claude
-.claude/
-wipe_playlists.py 
+# Ignore personal/local Claude Code state, but keep shared project config + hooks
+# and the shared skills library vendored from the devcontainer-sandbox template.
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+!.claude/skills/
+.claude/settings.local.json
+wipe_playlists.py
 debug_payloads
 debug_payloads/
 /recipes/archive
