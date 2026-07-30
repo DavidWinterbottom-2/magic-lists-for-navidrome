@@ -13,6 +13,7 @@ import unittest
 
 from backend.radio import RadioProcessor, MAX_SIMILAR_ARTISTS
 from backend.ai_client import AIClient
+from backend.navidrome_client import NavidromeClient
 
 
 def _track(tid, title="T", artist="A", album="Alb", year=2000, genre="Rock", play_count=0):
@@ -27,19 +28,25 @@ class FakeNav:
     """Minimal async stand-in for NavidromeClient, with call tracking."""
 
     def __init__(self, artist_tracks=None, similar=None, genre_tracks=None,
-                 song=None, artists=None):
+                 song=None, artists=None, similar_songs=None):
         self.artist_tracks = artist_tracks or {}   # artist_id -> [tracks]
         self.similar = similar or []                # [{id, name}]
         self.genre_tracks = genre_tracks or {}      # genre -> [tracks]
         self.song = song                            # dict for get_song
         self.artists = artists or []                # [{id, name}]
+        self.similar_songs = similar_songs or {}    # artist_id -> [tracks]
         self.genre_called = False
+        self.similar_songs_called = False
 
     async def get_tracks_by_artist(self, artist_id, library_ids=None):
         return list(self.artist_tracks.get(artist_id, []))
 
     async def get_similar_artists(self, artist_id, count=20):
         return list(self.similar)
+
+    async def get_similar_songs(self, artist_id, count=50, library_ids=None):
+        self.similar_songs_called = True
+        return list(self.similar_songs.get(artist_id, []))
 
     async def get_tracks_by_genre(self, genre, library_ids=None):
         self.genre_called = True
@@ -97,6 +104,24 @@ class RadioProcessorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(ids), len(set(ids)), "pool must be de-duplicated")
         self.assertIn("t3", ids, "similar-artist tracks should be included")
         self.assertEqual(sorted(ids), ["t1", "t2", "t3"])
+
+    async def test_similar_songs_are_the_primary_pool(self):
+        # getSimilarSongs2 returns a rich, library-resident pool in one call;
+        # it should be used directly and make the artist/genre backfill unnecessary.
+        nav = FakeNav(
+            artist_tracks={"A1": [_track("seed1")]},
+            similar_songs={"A1": [_track(f"s{i}", genre="Rock") for i in range(60)]},
+        )
+        proc = RadioProcessor(nav)
+        seed = {"type": "artist", "id": "A1", "name": "Alpha",
+                "artist_id": "A1", "artist_name": "Alpha", "genre": None}
+        pool = await proc.gather_candidate_tracks(seed)
+        ids = [t["id"] for t in pool]
+
+        self.assertTrue(nav.similar_songs_called, "getSimilarSongs2 should be consulted")
+        self.assertIn("s0", ids, "similar-songs results should populate the pool")
+        self.assertFalse(nav.genre_called, "a rich similar-songs pool needs no genre fallback")
+        self.assertEqual(len(ids), len(set(ids)), "pool must be de-duplicated")
 
     async def test_genre_fallback_used_when_pool_is_thin(self):
         nav = FakeNav(
@@ -230,6 +255,101 @@ class CurateRadioTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(track_ids, ["c1", "c0", "c2"])
         self.assertEqual(suggestions, [])
+
+
+class _FakeResponse:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self._payload
+
+
+class _FakeHttp:
+    """Captures the last GET and returns a canned Subsonic payload."""
+
+    def __init__(self, payload):
+        self._payload = payload
+        self.last_url = None
+        self.last_params = None
+
+    async def get(self, url, params=None):
+        self.last_url = url
+        self.last_params = params
+        return _FakeResponse(self._payload)
+
+
+def _make_nav_client(payload):
+    """Build a NavidromeClient wired to a fake HTTP layer (no network/env)."""
+    client = NavidromeClient.__new__(NavidromeClient)
+    client.base_url = "http://nav.local"
+    client.api_key = "k"
+    client.username = "u"
+    client.password = None
+    client._auth_token = None
+    client._subsonic_token = None
+    client._subsonic_salt = None
+    client.client = _FakeHttp(payload)
+    return client
+
+
+def _similar_songs_payload(songs, status="ok"):
+    body = {"status": status}
+    if status != "ok":
+        body["error"] = {"message": "boom"}
+    else:
+        body["similarSongs2"] = {"song": songs}
+    return {"subsonic-response": body}
+
+
+class GetSimilarSongsTests(unittest.IsolatedAsyncioTestCase):
+
+    def _song(self, sid, **over):
+        s = {
+            "id": sid, "title": "T", "artist": "Artist", "artistId": "A9",
+            "album": "Alb", "year": 2011, "genre": "Alt Rock",
+            "playCount": 7, "starred": "2020-01-01T00:00:00Z",
+        }
+        s.update(over)
+        return s
+
+    async def test_maps_song_list_to_standard_track_dicts(self):
+        nav = _make_nav_client(_similar_songs_payload([self._song("s1"), self._song("s2")]))
+        tracks = await nav.get_similar_songs("A9", count=25)
+
+        self.assertEqual([t["id"] for t in tracks], ["s1", "s2"])
+        t = tracks[0]
+        # shape must match get_tracks_by_artist / get_song so the AI curator is happy
+        self.assertEqual(
+            set(t),
+            {"id", "title", "artist", "artist_id", "album", "year", "genre",
+             "play_count", "local_library_likes"},
+        )
+        self.assertEqual(t["artist_id"], "A9")
+        self.assertEqual(t["play_count"], 7)
+        self.assertTrue(t["local_library_likes"])  # starred -> liked
+
+        # calls the getSimilarSongs2 endpoint with id + count
+        self.assertIn("getSimilarSongs2.view", nav.client.last_url)
+        self.assertEqual(nav.client.last_params.get("id"), "A9")
+        self.assertEqual(nav.client.last_params.get("count"), 25)
+
+    async def test_single_song_object_is_coerced_to_list(self):
+        # Subsonic returns a bare object (not a list) when there's exactly one song
+        nav = _make_nav_client(_similar_songs_payload(self._song("only")))
+        tracks = await nav.get_similar_songs("A9")
+        self.assertEqual([t["id"] for t in tracks], ["only"])
+
+    async def test_empty_when_no_songs(self):
+        nav = _make_nav_client(_similar_songs_payload([]))
+        self.assertEqual(await nav.get_similar_songs("A9"), [])
+
+    async def test_empty_on_api_error_status(self):
+        nav = _make_nav_client(_similar_songs_payload(None, status="failed"))
+        self.assertEqual(await nav.get_similar_songs("A9"), [])
 
 
 if __name__ == "__main__":

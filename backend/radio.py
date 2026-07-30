@@ -71,10 +71,13 @@ class RadioProcessor:
     ) -> List[Dict[str, Any]]:
         """Build a de-duplicated candidate pool of similar-style tracks from the library.
 
-        Strategy:
-          1. Always include the seed artist's own tracks.
-          2. Add tracks from similar artists (Last.fm-backed, library-resident).
-          3. If similar artists are unavailable, fall back to the seed's primary genre.
+        Strategy (each step only runs while the pool is still thin, so a single
+        good source short-circuits the rest):
+          1. Similar songs via Subsonic getSimilarSongs2 — a Last.fm-backed,
+             library-resident pool of the seed artist + similar artists in one call.
+          2. The seed artist's own tracks (guarantees the seed is represented).
+          3. Backfill from similar artists' catalogues.
+          4. Fall back to the seed's primary genre.
         """
         candidates: List[Dict[str, Any]] = []
         seen_ids = set()
@@ -89,7 +92,16 @@ class RadioProcessor:
         artist_id = seed.get("artist_id")
         artist_name = seed.get("artist_name")
 
-        # 1. Seed artist tracks
+        # 1. Similar songs (getSimilarSongs2) — the primary, song-level recall.
+        if artist_id:
+            try:
+                similar_songs = await self.nav_client.get_similar_songs(artist_id, MAX_CANDIDATE_TRACKS)
+                add_tracks(similar_songs)
+                logger.info(f"📻 Radio: {len(similar_songs)} similar songs for seed '{artist_name}'")
+            except Exception as e:
+                logger.warning(f"⚠️ Radio: failed to fetch similar songs: {e}")
+
+        # 2. Seed artist tracks — ensure the seed itself is present in the pool.
         if artist_id:
             try:
                 seed_tracks = await self.nav_client.get_tracks_by_artist(artist_id, library_ids)
@@ -98,9 +110,9 @@ class RadioProcessor:
             except Exception as e:
                 logger.warning(f"⚠️ Radio: failed to fetch seed artist tracks: {e}")
 
-        # 2. Similar artists
+        # 3. Backfill from similar artists — only when the pool is still thin.
         similar_artists = []
-        if artist_id:
+        if artist_id and len(candidates) < max(50, MAX_SIMILAR_ARTISTS):
             try:
                 similar_artists = await self.nav_client.get_similar_artists(artist_id, MAX_SIMILAR_ARTISTS)
             except Exception as e:
@@ -115,7 +127,7 @@ class RadioProcessor:
             except Exception as e:
                 logger.warning(f"⚠️ Radio: failed to fetch tracks for similar artist {similar.get('name')}: {e}")
 
-        # 3. Genre fallback — broaden the pool when we have little to work with
+        # 4. Genre fallback — broaden the pool when we have little to work with
         derived_genre = seed.get("genre") or self._most_common_genre(candidates)
         if len(candidates) < max(50, MAX_SIMILAR_ARTISTS) and derived_genre:
             try:
