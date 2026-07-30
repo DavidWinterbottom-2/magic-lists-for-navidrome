@@ -1,0 +1,98 @@
+name: Template sync
+
+# Keep this repo's shared assets current with the devcontainer-sandbox template:
+# the vendored Claude Code skills under .claude/skills/ and the standards docs
+# under standards/. This job pulls only what is declared in
+# .github/template-sync.json and opens a PR when a vendored copy has drifted.
+#
+# TEMPLATE_SYNC_TOKEN does two things and so needs two scopes:
+#   - Contents:read on DavidWinterbottom-2/devcontainer-sandbox, to read the
+#     (private) template — the workflow's own GITHUB_TOKEN cannot read another
+#     private repo, so if the secret is absent the sync step fails loudly rather
+#     than silently drifting.
+#   - pull-requests:write on THIS repo, to open the drift PR — GITHUB_TOKEN is
+#     refused at PR creation by the "Allow GitHub Actions to create and approve
+#     pull requests" repo setting, so the PR step uses the PAT instead.
+# A classic PAT with the `repo` scope covers both; a fine-grained PAT needs
+# Contents:read on the template and Pull requests:write here.
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: template-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync shared skills and standards from the template
+        env:
+          GH_TOKEN: ${{ secrets.TEMPLATE_SYNC_TOKEN }}
+        run: |
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::TEMPLATE_SYNC_TOKEN secret is not set — it needs Contents:read on the devcontainer-sandbox template. The default GITHUB_TOKEN cannot read another private repo."
+            exit 1
+          fi
+          scripts/sync-from-template.sh
+
+      - name: Open a PR if a vendored asset drifted
+        env:
+          # Create the PR with the PAT, not the default GITHUB_TOKEN: opening a PR
+          # with GITHUB_TOKEN is blocked by the "Allow GitHub Actions to create and
+          # approve pull requests" repo setting.
+          GH_TOKEN: ${{ secrets.TEMPLATE_SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$(git status --porcelain .claude/skills standards)" ]; then
+            echo "Vendored assets already match the template — nothing to do."
+            exit 0
+          fi
+
+          branch="template-sync/assets"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git checkout -B "$branch"
+          git add .claude/skills standards
+          git commit -m "Sync shared skills and standards from devcontainer-sandbox template"
+          # Plain --force, not --force-with-lease: the runner does a shallow
+          # checkout of the default branch only, so it has no remote-tracking ref
+          # for an already-existing template-sync/assets branch and the lease
+          # can't be verified. This branch is a bot-owned, throwaway ref always
+          # regenerated from the default branch, so overwriting it is correct.
+          git push --force -u origin "$branch"
+
+          if [ -n "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
+            echo "PR already open for ${branch}; updated its branch."
+            exit 0
+          fi
+
+          body_file="$(mktemp)"
+          {
+            echo 'Automated by `.github/workflows/template-sync.yml`.'
+            echo
+            echo 'A shared asset vendored from the devcontainer-sandbox template'
+            echo '(https://github.com/DavidWinterbottom-2/devcontainer-sandbox) has drifted'
+            echo 'from its canonical copy. This PR refreshes it. The synced set is declared'
+            echo 'in `.github/template-sync.json` (`shared_skills` + `shared_docs`); the'
+            echo 'repo'\''s own skills are left untouched.'
+            echo
+            echo 'Review the diff and merge to pick up the update.'
+          } > "$body_file"
+
+          gh pr create \
+            --base "$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)" \
+            --head "$branch" \
+            --title "Sync shared skills and standards from the devcontainer-sandbox template" \
+            --body-file "$body_file"

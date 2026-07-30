@@ -11,7 +11,11 @@
       "onAutoForward": "notify"
     }
   },
-  "postCreateCommand": "pip3 install --user -r requirements.txt",
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "remoteUser": "vscode",
+  "mounts": [
+    "source=${localEnv:HOME}/.ssh,target=/home/vscode/.ssh,type=bind,consistency=cached"
+  ],
   "remoteEnv": {
     "PYTHONPATH": "${containerWorkspaceFolder}"
   },

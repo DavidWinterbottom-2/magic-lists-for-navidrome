@@ -1,0 +1,28 @@
+{
+  "_comment": "What this repo vendors from the devcontainer-sandbox template, and where to pull it from. scripts/sync-from-template.sh reads this; .github/workflows/template-sync.yml runs it on a schedule and opens a PR whenever a vendored copy drifts from the canonical upstream. Two things are synced: shared Claude Code skills (into .claude/skills/) and shared standards docs (into standards/). The repo's own skills — listed in \"own_skills\" — are never touched. To carry another shared skill, add its directory name to \"shared_skills\"; to carry another shared doc, add a {src,dest} pair to \"shared_docs\".",
+  "source": {
+    "repo": "DavidWinterbottom-2/devcontainer-sandbox",
+    "ref": "main"
+  },
+  "skills": {
+    "path": ".claude/skills",
+    "dest": ".claude/skills"
+  },
+  "shared_skills": [
+    "code-review",
+    "create-pr",
+    "devcontainer-from-sandbox",
+    "diagnosing-bugs",
+    "tdd",
+    "resolving-merge-conflicts",
+    "setup-pre-commit",
+    "record-review",
+    "design-system-sync",
+    "version-bump-check"
+  ],
+  "own_skills": [],
+  "shared_docs": [
+    { "src": "standards/REPO-STANDARDS.md", "dest": "standards/REPO-STANDARDS.md" },
+    { "src": "standards/HOSTING-SECURITY.md", "dest": "standards/HOSTING-SECURITY.md" }
+  ]
+}
