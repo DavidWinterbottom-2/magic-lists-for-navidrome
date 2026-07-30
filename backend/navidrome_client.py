@@ -1014,7 +1014,7 @@ class NavidromeClient:
             params = self._get_subsonic_params()
             params["id"] = artist_id
             params["count"] = count
-            if library_ids and len(library_ids) > 0:
+            if library_ids:
                 params["musicFolderId"] = library_ids[0]
 
             response = await self.client.get(

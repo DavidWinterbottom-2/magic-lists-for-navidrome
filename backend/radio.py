@@ -17,6 +17,8 @@ logger = logging.getLogger("scheduler")
 MAX_CANDIDATE_TRACKS = 800
 # How many similar artists to pull tracks from.
 MAX_SIMILAR_ARTISTS = 12
+# Only reach for the artist/genre backfill while the pool is still this thin.
+MIN_POOL_BEFORE_BACKFILL = max(50, MAX_SIMILAR_ARTISTS)
 
 
 class RadioProcessor:
@@ -95,7 +97,7 @@ class RadioProcessor:
         # 1. Similar songs (getSimilarSongs2) — the primary, song-level recall.
         if artist_id:
             try:
-                similar_songs = await self.nav_client.get_similar_songs(artist_id, MAX_CANDIDATE_TRACKS)
+                similar_songs = await self.nav_client.get_similar_songs(artist_id, MAX_CANDIDATE_TRACKS, library_ids)
                 add_tracks(similar_songs)
                 logger.info(f"📻 Radio: {len(similar_songs)} similar songs for seed '{artist_name}'")
             except Exception as e:
@@ -112,7 +114,7 @@ class RadioProcessor:
 
         # 3. Backfill from similar artists — only when the pool is still thin.
         similar_artists = []
-        if artist_id and len(candidates) < max(50, MAX_SIMILAR_ARTISTS):
+        if artist_id and len(candidates) < MIN_POOL_BEFORE_BACKFILL:
             try:
                 similar_artists = await self.nav_client.get_similar_artists(artist_id, MAX_SIMILAR_ARTISTS)
             except Exception as e:
@@ -129,7 +131,7 @@ class RadioProcessor:
 
         # 4. Genre fallback — broaden the pool when we have little to work with
         derived_genre = seed.get("genre") or self._most_common_genre(candidates)
-        if len(candidates) < max(50, MAX_SIMILAR_ARTISTS) and derived_genre:
+        if len(candidates) < MIN_POOL_BEFORE_BACKFILL and derived_genre:
             try:
                 logger.info(f"📻 Radio: broadening pool via genre '{derived_genre}'")
                 genre_tracks = await self.nav_client.get_tracks_by_genre(derived_genre, library_ids)
