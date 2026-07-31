@@ -150,6 +150,26 @@ app.mount("/static", RevalidatingStaticFiles(directory="frontend/static"), name=
 # Templates
 templates = Jinja2Templates(directory="frontend/templates")
 
+
+def static_version() -> str:
+    """Cache-busting token for /static/app.js, derived from its mtime.
+
+    The template used to hardcode "?v=1.0.0", so the URL never changed and
+    browsers kept serving a cached app.js after every deploy. Deriving the
+    token from the file means the URL changes whenever the file does.
+    """
+    try:
+        return str(int(os.path.getmtime("frontend/static/app.js")))
+    except OSError:
+        return "0"
+
+
+def render_index(request: Request) -> HTMLResponse:
+    """Render the SPA shell with a cache-busting version for its assets"""
+    return templates.TemplateResponse(
+        request, "index.html", {"static_version": static_version()}
+    )
+
 # Initialize clients (lazy loading)
 navidrome_client = None
 ai_client = None
@@ -185,13 +205,13 @@ async def read_root(request: Request):
         return RedirectResponse(url="/system-check", status_code=302)
     # SYSTEM CHECK FEATURE - END
     
-    return templates.TemplateResponse(request, "index.html")
+    return render_index(request)
 
 # SYSTEM CHECK FEATURE - START
 @app.get("/system-check", response_class=HTMLResponse)
 async def system_check_page(request: Request):
     """Serve the system check page"""
-    return templates.TemplateResponse(request, "index.html")
+    return render_index(request)
 # SYSTEM CHECK FEATURE - END
 
 @app.get("/api/artists")
@@ -1680,7 +1700,7 @@ async def spa_router(request: Request, path: str):
         if not system_check_passed:
             from fastapi.responses import RedirectResponse
             return RedirectResponse(url="/system-check", status_code=302)
-        return templates.TemplateResponse(request, "index.html")
+        return render_index(request)
     
     # Unknown paths - redirect to home
     from fastapi.responses import RedirectResponse
