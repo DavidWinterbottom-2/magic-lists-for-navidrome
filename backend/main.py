@@ -1686,9 +1686,8 @@ if __name__ == "__main__":
     log_config = uvicorn.config.LOGGING_CONFIG
     log_config["formatters"]["access"]["()"] = FilteredUvicornFormatter
     
-    # Direct-run port (e.g. `python backend/main.py` in the devcontainer, which
-    # forwards 4545). Overridable via PORT. The Docker image pins 8000 in its CMD
-    # and compose remaps 4545:8000, so this default doesn't affect container runs.
+    # The app serves on 4545 everywhere — direct run, the Docker image's CMD, and
+    # the compose 4545:4545 mapping. Overridable via PORT.
     uvicorn.run(
         app,
         host="0.0.0.0",
