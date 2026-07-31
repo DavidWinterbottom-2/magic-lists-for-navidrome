@@ -257,6 +257,30 @@ class CurateRadioTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(suggestions, [])
 
 
+class CurateThisIsFallbackTests(unittest.IsolatedAsyncioTestCase):
+    """Regression guard: the 'This Is' curator's error paths must fall back, not crash.
+
+    The exception/parse handlers previously referenced an undefined `candidate_tracks`
+    (copy-pasted from the rediscover curator), so any AI failure raised NameError
+    instead of returning the play-count fallback. Surfaced by the CI ruff F821 gate.
+    """
+
+    async def test_malformed_response_falls_back_by_play_count(self):
+        tracks = [
+            _track("a", play_count=1),
+            _track("b", play_count=9),
+            _track("c", play_count=4),
+        ]
+        client = _make_ai_client(FakeProvider("not json at all"))
+        # Before the fix this raised NameError (undefined `candidate_tracks`);
+        # now it must return a fallback selection from the provided tracks.
+        result = await client.curate_this_is(
+            artist_name="Alpha", tracks_json=tracks, num_tracks=2
+        )
+        self.assertEqual(len(result), 2)
+        self.assertTrue(set(result).issubset({"a", "b", "c"}))
+
+
 class _FakeResponse:
     def __init__(self, payload):
         self._payload = payload
