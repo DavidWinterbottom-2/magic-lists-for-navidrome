@@ -167,13 +167,13 @@ async def read_root(request: Request):
         return RedirectResponse(url="/system-check", status_code=302)
     # SYSTEM CHECK FEATURE - END
     
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html")
 
 # SYSTEM CHECK FEATURE - START
 @app.get("/system-check", response_class=HTMLResponse)
 async def system_check_page(request: Request):
     """Serve the system check page"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html")
 # SYSTEM CHECK FEATURE - END
 
 @app.get("/api/artists")
@@ -1662,7 +1662,7 @@ async def spa_router(request: Request, path: str):
         if not system_check_passed:
             from fastapi.responses import RedirectResponse
             return RedirectResponse(url="/system-check", status_code=302)
-        return templates.TemplateResponse("index.html", {"request": request})
+        return templates.TemplateResponse(request, "index.html")
     
     # Unknown paths - redirect to home
     from fastapi.responses import RedirectResponse
