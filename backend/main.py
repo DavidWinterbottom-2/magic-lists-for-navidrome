@@ -127,7 +127,25 @@ async def shutdown_event():
         scheduler_logger.info("🛑 Scheduler shutdown completed")
 
 # Mount static files
-app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
+class RevalidatingStaticFiles(StaticFiles):
+    """Serve static assets with `Cache-Control: no-cache`.
+
+    Starlette already sends ETag/Last-Modified, but without Cache-Control a
+    browser is free to reuse a cached copy without revalidating. That means a
+    changed app.js can keep serving stale while index.html renders fresh, which
+    silently breaks the SPA (an unknown page id hides every content panel).
+
+    "no-cache" does not disable caching - it requires revalidation, so unchanged
+    files still come back as a cheap 304.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", RevalidatingStaticFiles(directory="frontend/static"), name="static")
 
 # Templates
 templates = Jinja2Templates(directory="frontend/templates")
