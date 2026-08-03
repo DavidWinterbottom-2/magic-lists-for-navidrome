@@ -14,9 +14,13 @@ source of truth and never hand-edit the vendored copies:
 
 - [`standards/REPO-STANDARDS.md`](standards/REPO-STANDARDS.md) — repo layout,
   branching, tests/coverage, PRs, reviews (REPO-STANDARDS §1–§9).
-- [`standards/HOSTING-SECURITY.md`](standards/HOSTING-SECURITY.md) — the
-  authentication contract for anything hosted publicly (applies once this app is
-  wired into docker-infra as a public service).
+
+`HOSTING-SECURITY.md` — the authentication contract for anything hosted publicly
+— is **deliberately not vendored here**. This repo is a public fork, and that doc
+describes the private estate (the shared Entra ID env-var contract, the MCP
+`x-api-key` gate, the Cloudflare vhost topology, and the names of other
+first-party services). Read it from the template when this app is wired into
+docker-infra as a public service; don't copy it in.
 
 ## Dev environment
 
