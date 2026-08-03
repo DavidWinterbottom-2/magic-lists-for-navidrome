@@ -5,8 +5,76 @@ Optimizes payload size for LLM compatibility and token cost efficiency by intell
 scoring and filtering source tracks based on user listening behavior.
 """
 
+import random
 from datetime import datetime
-from typing import List, Dict, Tuple, Any
+from typing import List, Dict, Optional, Tuple, Any
+
+# Fraction of a pool that must have been played before engagement scoring is
+# trusted to pick the whole candidate set. Below this, play counts and recency
+# say more about which corner of the library has been visited than about which
+# tracks belong together, so part of the set is drawn at random instead and
+# style similarity (the AI's job) carries the station.
+FULL_ENGAGEMENT_COVERAGE = 0.30
+
+
+def measure_play_coverage(tracks: List[Dict]) -> float:
+    """Fraction of these tracks that have ever been played."""
+    if not tracks:
+        return 0.0
+    played = sum(1 for track in tracks if (track.get('play_count') or 0) > 0)
+    return played / len(tracks)
+
+
+def effective_library_stats(tracks: List[Dict], library_stats: Optional[Dict] = None) -> Dict:
+    """Normalisation stats derived from the tracks in hand.
+
+    `NavidromeClient.get_library_stats` can't read a real maximum out of
+    Subsonic, so it *estimates* one — `max(100, total_tracks * 0.1)` — and on a
+    server that reports no total it falls back to a flat 100. Normalising real
+    play counts against an invented 100 makes the play signal almost weightless
+    on a young library: a track played 5 times scores 5, against a +50 bonus for
+    being starred.
+
+    Measuring the pool instead means the busiest track in it scores full marks,
+    whatever scale this particular library is on.
+    """
+    stats = dict(library_stats or {})
+    pool_max_plays = max((track.get('play_count') or 0) for track in tracks) if tracks else 0
+    if pool_max_plays > 0:
+        stats['max_play_count'] = pool_max_plays
+    elif not stats.get('max_play_count'):
+        stats['max_play_count'] = 1
+    return stats
+
+
+def select_with_tiebreak(
+    scored_tracks: List[Tuple[float, Dict]],
+    count: int,
+    rng: Optional[random.Random] = None
+) -> List[Dict]:
+    """Take the `count` best-scoring tracks, breaking ties at random.
+
+    A plain `scored[:count]` slice looks fine until most of the pool scores the
+    same — which is the normal case for a library that hasn't been played much,
+    where the great majority of tracks score exactly 0. Python's sort is stable,
+    so the identical subset was chosen on every rebuild, the AI saw the same
+    candidates every time, and stations came back looking unchanged no matter
+    what had been added to the library.
+
+    Tracks that genuinely outscore the cutoff are still always kept; only the
+    tied block at the boundary is sampled.
+    """
+    rng = rng or random
+    if count >= len(scored_tracks):
+        return [track for _, track in scored_tracks]
+    if count <= 0:
+        return []
+
+    cutoff = scored_tracks[count - 1][0]
+    above = [track for score, track in scored_tracks if score > cutoff]
+    tied = [track for score, track in scored_tracks if score == cutoff]
+    rng.shuffle(tied)
+    return above + tied[:max(0, count - len(above))]
 
 
 def score_tracks_by_user_engagement(tracks: List[Dict], library_stats: Dict) -> List[Tuple[float, Dict]]:
@@ -194,13 +262,13 @@ def filter_tracks_by_engagement(
     threshold_multiplier = calculate_filter_threshold(target_playlist_size)
     max_tracks_to_keep = target_playlist_size * threshold_multiplier
     
-    # Score and filter tracks
-    scored_tracks = score_tracks_by_user_engagement(tracks, library_stats)
-    
-    # Return top-scored tracks up to the limit
-    filtered_tracks = [track for score, track in scored_tracks[:max_tracks_to_keep]]
-    
-    return filtered_tracks
+    # Score and filter tracks, normalising against the pool in hand
+    stats = effective_library_stats(tracks, library_stats)
+    scored_tracks = score_tracks_by_user_engagement(tracks, stats)
+
+    # Ties are broken at random for the same reason as the "This Is" filter:
+    # a stable sort over a mostly-unplayed pool returns the same tracks forever.
+    return select_with_tiebreak(scored_tracks, max_tracks_to_keep)
 
 
 def filter_tracks_for_this_is_playlist(
@@ -233,12 +301,33 @@ def filter_tracks_for_this_is_playlist(
             'sent_count': len(source_tracks)
         }
     
-    # Score all tracks
-    scored_tracks = score_tracks_by_user_engagement(source_tracks, library_stats)
-    
-    # Take top N scored tracks
-    filtered_tracks = [track for score, track in scored_tracks[:threshold_count]]
-    
+    # Normalise against what this pool actually looks like, not an estimate
+    stats = effective_library_stats(source_tracks, library_stats)
+    scored_tracks = score_tracks_by_user_engagement(source_tracks, stats)
+
+    # How far to trust engagement scoring at all. On a barely-played library the
+    # top of the ranking is just "what I happened to listen to recently", which
+    # produces a narrow, repetitive station; so only part of the set is chosen by
+    # score and the rest is drawn at random from everything else, letting the AI
+    # pick on style. As the library gets played this fades back to pure scoring.
+    coverage = measure_play_coverage(source_tracks)
+    engagement_share = min(1.0, coverage / FULL_ENGAGEMENT_COVERAGE)
+    engagement_count = int(round(threshold_count * engagement_share))
+
+    filtered_tracks = select_with_tiebreak(scored_tracks, engagement_count)
+
+    # Fill the remainder at random from whatever engagement scoring didn't take
+    if len(filtered_tracks) < threshold_count:
+        chosen = {id(track) for track in filtered_tracks}
+        remainder = [track for _, track in scored_tracks if id(track) not in chosen]
+        random.shuffle(remainder)
+        filtered_tracks.extend(remainder[:threshold_count - len(filtered_tracks)])
+
+    print(
+        f"   🎲 Play coverage {coverage:.0%} → {engagement_count}/{threshold_count} "
+        f"by engagement, {threshold_count - engagement_count} sampled"
+    )
+
     # Log filtering decision and final payload
     print(f"🎯 FILTERING DECISION:")
     print(f"   🎯 Threshold: {threshold_count} tracks (target: {target_playlist_size} × {threshold_multiplier}x multiplier)")
@@ -251,6 +340,9 @@ def filter_tracks_for_this_is_playlist(
         'source_count': len(source_tracks),
         'sent_count': len(filtered_tracks),
         'threshold_multiplier': threshold_multiplier,
+        'play_coverage': coverage,
+        'engagement_count': engagement_count,
+        'sampled_count': len(filtered_tracks) - engagement_count,
         'score_range': {
             'highest': scored_tracks[0][0] if scored_tracks else 0,
             'lowest': scored_tracks[threshold_count-1][0] if len(scored_tracks) >= threshold_count else 0,
