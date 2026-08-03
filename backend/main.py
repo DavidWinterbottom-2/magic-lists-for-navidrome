@@ -45,7 +45,7 @@ logging.getLogger('httpcore').setLevel(logging.WARNING)
 from .navidrome_client import NavidromeClient
 from .ai_client import AIClient
 from .database import DatabaseManager, get_db
-from .schemas import CreatePlaylistRequest, CreateGenrePlaylistRequest, CreateRadioPlaylistRequest, Playlist, RediscoverWeeklyResponse, RediscoverWeeklyV2Response, CreateRediscoverPlaylistRequest, PlaylistWithScheduleInfo
+from .schemas import CreatePlaylistRequest, CreateGenrePlaylistRequest, CreateRadioPlaylistRequest, RecreatePlaylistRequest, Playlist, RediscoverWeeklyResponse, RediscoverWeeklyV2Response, CreateRediscoverPlaylistRequest, PlaylistWithScheduleInfo
 from .recipe_manager import recipe_manager
 from .rediscover import RediscoverWeekly, ReDiscoverV2Processor
 from .radio import (
@@ -836,7 +836,8 @@ async def create_radio_playlist(
             requested=request.playlist_length,
             delivered=len(track_summaries),
             candidate_pool_size=len(candidate_tracks),
-            distinct_artists=count_distinct_artists(curated_tracks)
+            distinct_artists=count_distinct_artists(curated_tracks),
+            warnings=processor.pool_warnings
         )
         if shortfall["is_short"]:
             scheduler_logger.info(
@@ -859,7 +860,9 @@ async def create_radio_playlist(
             reasoning=reasoning,
             navidrome_playlist_id=navidrome_playlist_id,
             playlist_length=request.playlist_length,
-            library_ids=request.library_ids
+            library_ids=request.library_ids,
+            album_suggestions=album_suggestions,
+            build_info=shortfall
         )
 
         # Handle scheduling if requested
@@ -1054,7 +1057,11 @@ async def create_rediscover_playlist_v2(
             songs=track_summaries,
             reasoning=ai_reasoning,
             navidrome_playlist_id=navidrome_playlist_id,
-            playlist_length=len(tracks),
+            # The length the user ASKED for, not what we managed to deliver.
+            # Storing len(tracks) meant an underfilled playlist permanently
+            # shrank its own target: rebuild a short 25 and it would only ever
+            # ask for what it got last time.
+            playlist_length=request.playlist_length,
             library_ids=request.library_ids
         )
         scheduler_logger.info(f"💾 Database playlist created: {playlist_record}")
@@ -1618,7 +1625,7 @@ async def refresh_radio_playlist(scheduled_playlist, db: DatabaseManager, propag
             f"Keep it on-theme but vary the selection and ordering for a fresh listen."
         ) if previous_songs else ""
 
-        curated_track_ids, reasoning, _ = await ai_client_instance.curate_radio(
+        curated_track_ids, reasoning, album_suggestions = await ai_client_instance.curate_radio(
             seed_name=seed["name"],
             tracks_json=filtered_tracks,
             num_tracks=original_length,
@@ -1649,10 +1656,33 @@ async def refresh_radio_playlist(scheduled_playlist, db: DatabaseManager, propag
         )
 
         track_summaries = summarise_tracks(candidate_tracks, order=curated_track_ids)
+
+        # Record how this rebuild went, exactly as creation does. A scheduled
+        # rebuild has nobody watching it, so this is the only way the listener
+        # ever learns the station came back short or from a degraded pool.
+        shortfall = build_shortfall(
+            requested=original_length,
+            delivered=len(curated_tracks),
+            candidate_pool_size=len(candidate_tracks),
+            distinct_artists=count_distinct_artists(curated_tracks),
+            warnings=processor.pool_warnings
+        )
+        album_suggestions = [
+            {**suggestion, "lidarr_url": lidarr_add_url(suggestion.get("artist"), suggestion.get("album"))}
+            for suggestion in (album_suggestions or [])
+        ]
+        if shortfall["is_short"]:
+            scheduler_logger.info(
+                f"📻 Radio refresh: '{scheduled_playlist.navidrome_playlist_id}' came up "
+                f"{shortfall['missing']} track(s) short ({len(curated_tracks)}/{original_length})"
+            )
+
         await db.update_playlist_content(
             navidrome_playlist_id=scheduled_playlist.navidrome_playlist_id,
             songs=track_summaries,
-            reasoning=reasoning
+            reasoning=reasoning,
+            album_suggestions=album_suggestions,
+            build_info=shortfall
         )
 
         await advance_schedule(
@@ -1701,7 +1731,11 @@ def infer_playlist_type(playlist: dict) -> str:
 
 
 @app.post("/api/playlists/{playlist_id}/recreate")
-async def recreate_playlist(playlist_id: int, db: DatabaseManager = Depends(get_db)):
+async def recreate_playlist(
+    playlist_id: int,
+    options: RecreatePlaylistRequest = RecreatePlaylistRequest(),
+    db: DatabaseManager = Depends(get_db)
+):
     """Rebuild a playlist now, rather than waiting for its schedule.
 
     Reuses the scheduler's own refresh paths so a manual rebuild and an
@@ -1733,11 +1767,53 @@ async def recreate_playlist(playlist_id: int, db: DatabaseManager = Depends(get_
             detail=f"Don't know how to rebuild a '{playlist_type}' playlist"
         )
 
+    # Apply any requested changes BEFORE rebuilding, so the new settings are what
+    # the rebuild actually uses rather than taking effect a run late.
+    if options.playlist_length is not None:
+        if options.playlist_length < 1:
+            raise HTTPException(status_code=400, detail="playlist_length must be at least 1")
+        await db.update_playlist_length(playlist_id, options.playlist_length)
+        scheduler_logger.info(
+            f"🔁 Recreate: target length for '{playlist.get('playlist_name')}' "
+            f"set to {options.playlist_length}"
+        )
+
+    refresh_frequency = playlist.get("refresh_frequency")
+    scheduled_id = playlist.get("scheduled_id")
+    if options.refresh_frequency is not None and options.refresh_frequency != refresh_frequency:
+        if options.refresh_frequency not in ("none", "never", "daily", "weekly", "monthly"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown refresh frequency '{options.refresh_frequency}'"
+            )
+        # Replace rather than mutate: there is no update-frequency method, and a
+        # schedule is only ever one row per Navidrome playlist.
+        await db.delete_scheduled_playlist_by_navidrome_id(navidrome_playlist_id)
+        scheduled_id = None
+        refresh_frequency = options.refresh_frequency
+        if refresh_frequency not in ("none", "never"):
+            await db.create_scheduled_playlist(
+                playlist_type=playlist_type,
+                navidrome_playlist_id=navidrome_playlist_id,
+                refresh_frequency=refresh_frequency,
+                next_refresh=calculate_next_refresh(refresh_frequency)
+            )
+            refreshed_schedule = await db.get_playlist_by_id_with_schedule_info(playlist_id)
+            scheduled_id = (refreshed_schedule or {}).get("scheduled_id")
+        schedule_playlist_refresh()
+        scheduler_logger.info(
+            f"🔁 Recreate: schedule for '{playlist.get('playlist_name')}' "
+            f"set to {refresh_frequency}"
+        )
+
+    # Re-read so the rebuild picks up a changed length
+    playlist = await db.get_playlist_by_id_with_schedule_info(playlist_id) or playlist
+
     target = ManualRefreshTarget(
         navidrome_playlist_id=navidrome_playlist_id,
         playlist_type=playlist_type,
-        refresh_frequency=playlist.get("refresh_frequency"),
-        scheduled_id=playlist.get("scheduled_id")
+        refresh_frequency=refresh_frequency,
+        scheduled_id=scheduled_id
     )
 
     scheduler_logger.info(
@@ -1764,6 +1840,9 @@ async def recreate_playlist(playlist_id: int, db: DatabaseManager = Depends(get_
         "track_count": len(songs),
         "songs": songs,
         "reasoning": (refreshed or {}).get("reasoning"),
+        # Same detail a first build returns, so a rebuild shows the same panel
+        "album_suggestions": (refreshed or {}).get("album_suggestions") or [],
+        "shortfall": (refreshed or {}).get("build_info"),
     }
 
 
