@@ -1461,7 +1461,15 @@ function renderPlaylists(playlists) {
                     ${playlist.reasoning ? `<p class="text-sm text-gray-600 m-0 mt-2 italic">${escapeHtml(truncateText(playlist.reasoning, 140))}</p>` : ''}
                     ${trackList}
                 </div>
-                <div class="flex-none">
+                <div class="flex-none flex items-center gap-x-1">
+                    <button
+                        id="recreate-btn-${playlist.id}"
+                        data-playlist-name="${escapeHtml(playlist.playlist_name)}"
+                        onclick="recreatePlaylist(${playlist.id}, this.dataset.playlistName)"
+                        class="text-sm font-medium underline cursor-pointer border-none bg-transparent text-gray-600 hover:text-gray-900 px-2 py-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Recreate
+                    </button>
                     <button
                         data-playlist-name="${escapeHtml(playlist.playlist_name)}"
                         onclick="deletePlaylist(${playlist.id}, this.dataset.playlistName)"
@@ -1473,6 +1481,51 @@ function renderPlaylists(playlists) {
             </div>
         `;
     }).join('');
+}
+
+async function recreatePlaylist(playlistId, playlistName) {
+    if (!confirm(`Rebuild "${playlistName}" now?\n\nThis replaces its current tracks with a freshly generated selection, in both Magic Lists and Navidrome.`)) {
+        return;
+    }
+
+    const button = document.getElementById(`recreate-btn-${playlistId}`);
+    if (button) {
+        button.disabled = true;
+        button.textContent = 'Rebuilding...';
+    }
+    // Curation calls the AI provider, so this can take a while — keep the
+    // toast up (duration 0) until we know the outcome.
+    showToast('loading', `Rebuilding "${playlistName}"...`, 0);
+
+    try {
+        const response = await fetch(`/api/playlists/${playlistId}/recreate`, { method: 'POST' });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+            throw new Error(errorData.detail || 'Failed to recreate playlist');
+        }
+
+        const data = await response.json();
+        showToast('success', `Rebuilt "${data.playlist_name}" with ${data.track_count} tracks`);
+
+        if (typeof window.rybbit !== 'undefined') {
+            window.rybbit.event('Playlist Recreated', {
+                playlistType: data.playlist_type,
+                trackCount: data.track_count
+            });
+        }
+
+        // Re-render so the new tracklist and refresh time are shown
+        loadPlaylists();
+
+    } catch (error) {
+        console.error('Error recreating playlist:', error);
+        showToast('error', error.message);
+        if (button) {
+            button.disabled = false;
+            button.textContent = 'Recreate';
+        }
+    }
 }
 
 async function deletePlaylist(playlistId, playlistName) {
