@@ -309,7 +309,8 @@ class DatabaseManager:
                     p.navidrome_playlist_id,
                     sp.refresh_frequency,
                     sp.next_refresh,
-                    sp.playlist_type
+                    sp.playlist_type,
+                    sp.id
                 FROM playlists p
                 LEFT JOIN scheduled_playlists sp ON p.navidrome_playlist_id = sp.navidrome_playlist_id
                 WHERE p.id = ?
@@ -328,9 +329,13 @@ class DatabaseManager:
                         "navidrome_playlist_id": row[7],
                         "refresh_frequency": row[8],
                         "next_refresh": row[9],
-                        "playlist_type": row[10]
+                        "playlist_type": row[10],
+                        # The scheduled_playlists row id, or None when this
+                        # playlist has no schedule. A manual recreate needs it to
+                        # know whether there is a next-refresh time to advance.
+                        "scheduled_id": row[11]
                     }
-        
+
         return None
     
     async def delete_playlist(self, playlist_id: int) -> bool:

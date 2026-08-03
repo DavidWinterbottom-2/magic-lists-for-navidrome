@@ -1306,7 +1306,48 @@ async def refresh_scheduled_playlists():
     except Exception as e:
         scheduler_logger.error(f"❌ Error checking scheduled playlists: {e}")
 
-async def refresh_rediscover_playlist(scheduled_playlist, db: DatabaseManager):
+class ManualRefreshTarget:
+    """Stands in for a `scheduled_playlists` row when recreating on demand.
+
+    The refresh functions were written for the scheduler and read their target
+    off a scheduled row. A manual recreate has to work for playlists that were
+    never scheduled, so it passes one of these instead: same attributes, but a
+    None `id` marks that there is no schedule to advance afterwards.
+    """
+
+    def __init__(self, navidrome_playlist_id: str, playlist_type: str,
+                 refresh_frequency: str = "none", scheduled_id: int = None):
+        self.id = scheduled_id
+        self.navidrome_playlist_id = navidrome_playlist_id
+        self.playlist_type = playlist_type
+        self.refresh_frequency = refresh_frequency or "none"
+        self.next_refresh = None
+
+
+async def advance_schedule(scheduled_playlist, db: DatabaseManager, label: str) -> None:
+    """Move a playlist's next-refresh time on after a successful rebuild.
+
+    Skipped when there is no schedule behind the rebuild — a manual recreate of
+    an unscheduled playlist still counts as a refresh, it just has no next run
+    to push forward.
+    """
+    if getattr(scheduled_playlist, "id", None) is None:
+        scheduler_logger.info(f"✅ Recreated {label} (not scheduled — nothing to advance)")
+        return
+
+    if scheduled_playlist.refresh_frequency in (None, "none", "never"):
+        scheduler_logger.info(f"✅ Recreated {label} (schedule paused)")
+        return
+
+    next_refresh = calculate_next_refresh(scheduled_playlist.refresh_frequency)
+    await db.update_scheduled_playlist_next_refresh(scheduled_playlist.id, next_refresh)
+    scheduler_logger.info(
+        f"✅ Successfully refreshed {label}. "
+        f"Next refresh: {next_refresh.strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+
+
+async def refresh_rediscover_playlist(scheduled_playlist, db: DatabaseManager, propagate_errors: bool = False):
     """Refresh a specific Re-Discover Weekly playlist"""
     try:
         scheduler_logger.info(f"🔄 Starting refresh for playlist ID: {scheduled_playlist.navidrome_playlist_id} (frequency: {scheduled_playlist.refresh_frequency})")
@@ -1399,23 +1440,21 @@ async def refresh_rediscover_playlist(scheduled_playlist, db: DatabaseManager):
                 reasoning=reasoning_to_store
             )
             
-            # Calculate next refresh time
-            next_refresh = calculate_next_refresh(scheduled_playlist.refresh_frequency)
-            
-            # Update the scheduled playlist record
-            await db.update_scheduled_playlist_next_refresh(
-                scheduled_playlist.id, 
-                next_refresh
+            await advance_schedule(
+                scheduled_playlist, db,
+                f"playlist {scheduled_playlist.navidrome_playlist_id}"
             )
-            
-            scheduler_logger.info(f"✅ Successfully refreshed playlist {scheduled_playlist.navidrome_playlist_id}. Next refresh: {next_refresh.strftime('%Y-%m-%d %H:%M:%S')}")
         else:
             scheduler_logger.warning(f"⚠️ No tracks generated for playlist {scheduled_playlist.navidrome_playlist_id}")
-        
+            if propagate_errors:
+                raise Exception("No tracks were generated for this playlist")
+
     except Exception as e:
         scheduler_logger.error(f"❌ Error refreshing playlist {scheduled_playlist.navidrome_playlist_id}: {e}")
+        if propagate_errors:
+            raise
 
-async def refresh_this_is_playlist(scheduled_playlist, db: DatabaseManager):
+async def refresh_this_is_playlist(scheduled_playlist, db: DatabaseManager, propagate_errors: bool = False):
     """Refresh a specific This Is playlist"""
     try:
         scheduler_logger.info(f"🔄 Starting refresh for This Is playlist ID: {scheduled_playlist.navidrome_playlist_id} (frequency: {scheduled_playlist.refresh_frequency})")
@@ -1513,25 +1552,25 @@ async def refresh_this_is_playlist(scheduled_playlist, db: DatabaseManager):
                     reasoning=reasoning
                 )
                 
-                # Calculate next refresh time
-                next_refresh = calculate_next_refresh(scheduled_playlist.refresh_frequency)
-                
-                # Update the scheduled playlist record
-                await db.update_scheduled_playlist_next_refresh(
-                    scheduled_playlist.id, 
-                    next_refresh
+                await advance_schedule(
+                    scheduled_playlist, db,
+                    f"This Is playlist {scheduled_playlist.navidrome_playlist_id}"
                 )
-                
-                scheduler_logger.info(f"✅ Successfully refreshed This Is playlist {scheduled_playlist.navidrome_playlist_id}. Next refresh: {next_refresh.strftime('%Y-%m-%d %H:%M:%S')}")
             else:
                 scheduler_logger.warning(f"⚠️ No curated tracks generated for This Is playlist {scheduled_playlist.navidrome_playlist_id}")
+                if propagate_errors:
+                    raise Exception("The AI returned no tracks for this playlist")
         else:
             scheduler_logger.warning(f"⚠️ No tracks found for artist {artist_name} in playlist {scheduled_playlist.navidrome_playlist_id}")
-        
+            if propagate_errors:
+                raise Exception(f"No tracks found for artist {artist_name}")
+
     except Exception as e:
         scheduler_logger.error(f"❌ Error refreshing This Is playlist {scheduled_playlist.navidrome_playlist_id}: {e}")
+        if propagate_errors:
+            raise
 
-async def refresh_radio_playlist(scheduled_playlist, db: DatabaseManager):
+async def refresh_radio_playlist(scheduled_playlist, db: DatabaseManager, propagate_errors: bool = False):
     """Refresh a specific Radio playlist by regenerating the station from its seed"""
     try:
         scheduler_logger.info(f"🔄 Starting refresh for Radio playlist ID: {scheduled_playlist.navidrome_playlist_id} (frequency: {scheduled_playlist.refresh_frequency})")
@@ -1616,13 +1655,15 @@ async def refresh_radio_playlist(scheduled_playlist, db: DatabaseManager):
             reasoning=reasoning
         )
 
-        next_refresh = calculate_next_refresh(scheduled_playlist.refresh_frequency)
-        await db.update_scheduled_playlist_next_refresh(scheduled_playlist.id, next_refresh)
-
-        scheduler_logger.info(f"✅ Successfully refreshed Radio playlist {scheduled_playlist.navidrome_playlist_id}. Next refresh: {next_refresh.strftime('%Y-%m-%d %H:%M:%S')}")
+        await advance_schedule(
+            scheduled_playlist, db,
+            f"Radio playlist {scheduled_playlist.navidrome_playlist_id}"
+        )
 
     except Exception as e:
         scheduler_logger.error(f"❌ Error refreshing Radio playlist {scheduled_playlist.navidrome_playlist_id}: {e}")
+        if propagate_errors:
+            raise
 
 @app.get("/api/playlists")
 async def get_all_playlists(db: DatabaseManager = Depends(get_db)):
@@ -1637,6 +1678,94 @@ async def get_all_playlists(db: DatabaseManager = Depends(get_db)):
         return playlists
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch playlists: {str(e)}")
+
+def infer_playlist_type(playlist: dict) -> str:
+    """Work out which refresh path rebuilds this playlist.
+
+    `playlist_type` is only recorded on the scheduled_playlists row, so a
+    playlist that was never scheduled has to be identified from the key it
+    stored in artist_id: Radio writes "radio:{seed_type}:{seed_id}" and
+    Re-Discover writes a fixed sentinel. Anything else is a "This Is" artist id
+    (Genre Mix stores a genre name there, but has no refresh path at all, so it
+    falls through to the same error either way).
+    """
+    if playlist.get("playlist_type"):
+        return playlist["playlist_type"]
+
+    artist_id = playlist.get("artist_id") or ""
+    if artist_id.startswith("radio:"):
+        return "radio"
+    if artist_id in ("rediscover", "rediscover_v2"):
+        return "rediscover"
+    return "this_is"
+
+
+@app.post("/api/playlists/{playlist_id}/recreate")
+async def recreate_playlist(playlist_id: int, db: DatabaseManager = Depends(get_db)):
+    """Rebuild a playlist now, rather than waiting for its schedule.
+
+    Reuses the scheduler's own refresh paths so a manual rebuild and an
+    automatic one produce the same result — including the Radio rules (seed
+    first, seed artist capped). Unlike the scheduled run, errors are propagated
+    so the button can report what went wrong instead of failing silently.
+    """
+    playlist = await db.get_playlist_by_id_with_schedule_info(playlist_id)
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+
+    navidrome_playlist_id = playlist.get("navidrome_playlist_id")
+    if not navidrome_playlist_id:
+        raise HTTPException(
+            status_code=400,
+            detail="This playlist isn't linked to a Navidrome playlist, so it can't be rebuilt"
+        )
+
+    playlist_type = infer_playlist_type(playlist)
+    refreshers = {
+        "radio": refresh_radio_playlist,
+        "this_is": refresh_this_is_playlist,
+        "rediscover": refresh_rediscover_playlist,
+    }
+    refresher = refreshers.get(playlist_type)
+    if not refresher:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Don't know how to rebuild a '{playlist_type}' playlist"
+        )
+
+    target = ManualRefreshTarget(
+        navidrome_playlist_id=navidrome_playlist_id,
+        playlist_type=playlist_type,
+        refresh_frequency=playlist.get("refresh_frequency"),
+        scheduled_id=playlist.get("scheduled_id")
+    )
+
+    scheduler_logger.info(
+        f"🔁 Manual recreate requested for {playlist_type} playlist "
+        f"'{playlist.get('playlist_name')}' ({navidrome_playlist_id})"
+    )
+
+    try:
+        await refresher(target, db, propagate_errors=True)
+    except Exception as e:
+        error_msg = str(e)
+        if "Invalid username or password" in error_msg or "No authentication method available" in error_msg:
+            raise HTTPException(status_code=401, detail=error_msg)
+        if "Network error" in error_msg or "connecting to Navidrome" in error_msg:
+            raise HTTPException(status_code=503, detail=f"Cannot connect to Navidrome server: {error_msg}")
+        raise HTTPException(status_code=500, detail=f"Failed to recreate playlist: {error_msg}")
+
+    refreshed = await db.get_playlist_by_id_with_schedule_info(playlist_id)
+    songs = normalise_stored_songs((refreshed or {}).get("songs", []))
+    return {
+        "playlist_id": playlist_id,
+        "playlist_name": (refreshed or playlist).get("playlist_name"),
+        "playlist_type": playlist_type,
+        "track_count": len(songs),
+        "songs": songs,
+        "reasoning": (refreshed or {}).get("reasoning"),
+    }
+
 
 @app.delete("/api/playlists/{playlist_id}")
 async def delete_playlist(playlist_id: int, db: DatabaseManager = Depends(get_db)):
