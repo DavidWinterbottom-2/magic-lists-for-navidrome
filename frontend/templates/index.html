@@ -26,12 +26,18 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
 
-    <!-- Rybbit Analytics -->
+    <!-- Analytics (Umami, self-hosted) — only rendered when ANALYTICS_SCRIPT_URL
+         and ANALYTICS_WEBSITE_ID are both set, so this collects nothing until you
+         point it at a collector you run. Upstream hardcoded its author's instance
+         here. Tracking calls go through trackEvent()/trackPageview() in app.js,
+         which no-op when the tracker isn't loaded. -->
+    {% if analytics_script_url and analytics_website_id %}
     <script
-        src="https://analytics.itsricky.com/api/script.js"
-        data-site-id="19114a18a3f1"
+        src="{{ analytics_script_url }}"
+        data-website-id="{{ analytics_website_id }}"
         defer
     ></script>
+    {% endif %}
 
     <!-- Tailwind CSS (required for Preline) -->
     <script src="https://cdn.tailwindcss.com"></script>
