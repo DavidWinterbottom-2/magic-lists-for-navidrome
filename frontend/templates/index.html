@@ -4,7 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Magic Lists</title>
-    
+
+    <!-- Shared winterbottom design system (vendored from docker-infra/design-system).
+         The theme script is NOT deferred so the saved light/dark choice is applied
+         before first paint — deferring it causes a flash of the wrong theme. -->
+    <script src="/static/winterbottom-theme.js"></script>
+    <link rel="stylesheet" href="/static/winterbottom.css">
+
+    <!-- Installable app -->
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" href="/static/assets/favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="/static/assets/apple-touch-icon.png">
+    <meta name="theme-color" content="#f0b24a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Magic Lists">
+    <meta name="mobile-web-app-capable" content="yes">
+
     <!-- Inter font -->
     <!-- <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet"> -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,6 +35,62 @@
 
     <!-- Tailwind CSS (required for Preline) -->
     <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Point Tailwind's palette at the design tokens, so the ~400 utility
+         classes already in this page resolve to winterbottom colours and follow
+         the light/dark toggle without touching the markup. `black` is left
+         alone: it is only used for the modal overlay, where Tailwind's
+         bg-opacity utility needs a real colour to blend. -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        white: 'var(--surface)',
+                        gray: {
+                            50: 'var(--surface-2)',
+                            100: 'var(--bg)',
+                            200: 'var(--border)',
+                            300: 'var(--border)',
+                            400: 'var(--ink-3)',
+                            500: 'var(--ink-2)',
+                            600: 'var(--ink-2)',
+                            700: 'var(--ink)',
+                            800: 'var(--ink)',
+                            900: 'var(--ink)'
+                        },
+                        blue: {
+                            50: 'var(--accent-tint)', 200: 'var(--accent-tint)',
+                            400: 'var(--accent)', 500: 'var(--accent)',
+                            600: 'var(--accent)', 800: 'var(--accent)'
+                        },
+                        indigo: {
+                            50: 'var(--accent-tint)', 200: 'var(--accent-tint)',
+                            400: 'var(--accent)', 600: 'var(--accent)', 800: 'var(--accent)'
+                        },
+                        red: {
+                            50: 'var(--surface-2)', 100: 'var(--border)', 200: 'var(--border)',
+                            300: 'var(--neg)', 400: 'var(--neg)', 500: 'var(--neg)',
+                            600: 'var(--neg)', 700: 'var(--neg)', 800: 'var(--neg)'
+                        },
+                        green: {
+                            50: 'var(--surface-2)', 200: 'var(--border)', 300: 'var(--pos)',
+                            400: 'var(--pos)', 600: 'var(--pos)', 700: 'var(--pos)', 800: 'var(--pos)'
+                        },
+                        emerald: { 500: 'var(--pos)', 600: 'var(--pos)' },
+                        amber: {
+                            50: 'var(--surface-2)', 200: 'var(--border)',
+                            800: 'var(--warn)', 900: 'var(--warn)'
+                        },
+                        yellow: { 400: 'var(--warn)', 600: 'var(--warn)' }
+                    }
+                }
+            }
+        };
+    </script>
+
+    <!-- App-local layer: must load after Tailwind (see the file header) -->
+    <link rel="stylesheet" href="/static/magiclists.css">
 
     <!-- Preline UI -->
     <script src="https://cdn.jsdelivr.net/npm/preline@latest/dist/preline.min.js"></script>
@@ -54,10 +125,15 @@
                 <div class="flex items-center justify-between">
                     <div class="flex items-center">
                         <a class="flex items-center text-xl font-bold" href="#" data-page="home">
-                            <img src="/static/assets/ml-logo.svg" alt="Magic Lists" class="h-10 w-auto">
+                            <img src="/static/assets/ml-logo.svg" alt="Magic Lists" class="ml-logo h-10 w-auto">
                         </a>
                     </div>
-                    <div class="mobile-toggle"> 
+                    <div class="mobile-toggle flex items-center gap-x-2">
+                        <!-- Light/dark toggle — wired by winterbottom-theme.js -->
+                        <button type="button" id="theme-toggle" data-wb-theme-toggle aria-label="Switch theme">
+                            <span data-wb-theme-icon aria-hidden="true">☀</span>
+                        </button>
+
                         <button type="button" class="md:hidden hs-collapse-toggle relative size-9 flex justify-center items-center gap-x-2 rounded-lg border border-gray-200 bg-white text-gray-800 shadow-2xs hover:bg-gray-50 focus:outline-hidden focus:bg-gray-50 disabled:opacity-50 disabled:pointer-events-none " id="hs-navbar-alignment-collapse" aria-expanded="false" aria-controls="hs-navbar-alignment" aria-label="Toggle navigation" data-hs-collapse="#hs-navbar-alignment">
                             <svg class="hs-collapse-open:hidden shrink-0 size-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" x2="21" y1="6" y2="6"/><line x1="3" x2="21" y1="12" y2="12"/><line x1="3" x2="21" y1="18" y2="18"/></svg>
                             <svg class="hs-collapse-open:block hidden shrink-0 size-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
@@ -784,6 +860,7 @@
                      <!-- Radio Results (album suggestions) -->
                      <div id="radio-results" class="hidden mt-8 pt-6 border-t border-gray-200">
                          <div id="radio-reasoning" class="mb-6 text-sm text-gray-600 italic"></div>
+                         <div id="radio-shortfall" class="hidden mb-6"></div>
                          <h2 class="text-lg font-bold text-gray-900 mb-1">Albums to add to your library</h2>
                          <p class="text-sm text-gray-500 mb-4">Similar-style albums that fit this station but aren't in your library yet.</p>
                          <div id="radio-album-suggestions" class="space-y-3"></div>

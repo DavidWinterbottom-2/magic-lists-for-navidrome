@@ -149,10 +149,11 @@ Use this method if you prefer to run Python directly or want to contribute to de
     AI_PROVIDER=openrouter              # Optional: openrouter, groq, google, ollama
     AI_API_KEY=your_openrouter_api_key  # Optional, for OpenRouter/Groq/Google
     AI_MODEL=meta-llama/llama-3.3-70b-instruct # Optional, for AI providers
+    LIDARR_URL=https://lidarr.example.com # Optional: link Radio album suggestions to Lidarr
 ```
 5. Run the application:
 ```bash
-    python -m uvicorn app.main:app --host 0.0.0.0 --port 4545
+    python -m uvicorn backend.main:app --host 0.0.0.0 --port 4545
 ```
 6. Access the application at http://localhost:4545
 To update: Simply `git pull` and restart the application.

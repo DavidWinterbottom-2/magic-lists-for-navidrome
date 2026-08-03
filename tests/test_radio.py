@@ -11,7 +11,10 @@ Run from the repo root:
 
 import unittest
 
-from backend.radio import RadioProcessor, MAX_SIMILAR_ARTISTS
+from backend.radio import (
+    RadioProcessor, MAX_SIMILAR_ARTISTS, build_shortfall, cap_seed_artist,
+    lidarr_add_url, promote_seed_first, seed_artist_limit
+)
 from backend.ai_client import AIClient
 from backend.navidrome_client import NavidromeClient
 
@@ -181,6 +184,242 @@ class RadioProcessorTests(unittest.IsolatedAsyncioTestCase):
         tracks = [_track("1", genre="Rock"), _track("2", genre="Rock"), _track("3", genre="Jazz")]
         self.assertEqual(RadioProcessor._most_common_genre(tracks), "Rock")
         self.assertIsNone(RadioProcessor._most_common_genre([_track("1", genre=None)]))
+
+
+class PromoteSeedFirstTests(unittest.TestCase):
+    """The station must open with the seed artist/song, whatever the curator returned."""
+
+    def _artist_seed(self):
+        return {"type": "artist", "id": "A1", "name": "Alpha",
+                "artist_id": "A1", "artist_name": "Alpha"}
+
+    def _by(self, tid, artist, artist_id=None):
+        track = _track(tid, artist=artist)
+        track["artist_id"] = artist_id
+        return track
+
+    def test_seed_artist_track_moves_to_front(self):
+        curated = [
+            self._by("x", "Beta", "A2"),
+            self._by("y", "Gamma", "A3"),
+            self._by("seed", "Alpha", "A1"),
+        ]
+        result = promote_seed_first(curated, self._artist_seed())
+        self.assertEqual([t["id"] for t in result], ["seed", "x", "y"])
+
+    def test_order_untouched_when_seed_already_opens(self):
+        curated = [self._by("seed", "Alpha", "A1"), self._by("x", "Beta", "A2")]
+        result = promote_seed_first(curated, self._artist_seed())
+        self.assertEqual([t["id"] for t in result], ["seed", "x"])
+
+    def test_earliest_seed_track_wins_when_several_present(self):
+        curated = [
+            self._by("x", "Beta", "A2"),
+            self._by("s1", "Alpha", "A1"),
+            self._by("s2", "Alpha", "A1"),
+        ]
+        result = promote_seed_first(curated, self._artist_seed())
+        self.assertEqual(result[0]["id"], "s1", "curator ordering breaks the tie")
+
+    def test_seed_song_beats_another_track_by_the_same_artist(self):
+        seed = {"type": "song", "id": "S1", "name": "Track — Alpha",
+                "artist_id": "A1", "artist_name": "Alpha", "song_title": "Track"}
+        curated = [
+            self._by("other", "Alpha", "A1"),   # right artist, wrong song
+            self._by("S1", "Alpha", "A1"),      # the seed itself
+        ]
+        result = promote_seed_first(curated, seed)
+        self.assertEqual(result[0]["id"], "S1")
+
+    def test_matches_on_name_when_track_has_no_artist_id(self):
+        # Genre-fallback tracks can arrive without an artist_id
+        curated = [self._by("x", "Beta", "A2"), self._by("seed", "Alpha", None)]
+        result = promote_seed_first(curated, self._artist_seed())
+        self.assertEqual(result[0]["id"], "seed")
+
+    def test_seed_pulled_from_pool_when_curator_dropped_it(self):
+        curated = [self._by("x", "Beta", "A2"), self._by("y", "Gamma", "A3")]
+        pool = curated + [self._by("seed", "Alpha", "A1")]
+        result = promote_seed_first(curated, self._artist_seed(), pool)
+        self.assertEqual(result[0]["id"], "seed")
+        self.assertEqual(len(result), len(curated), "length must be preserved")
+        self.assertEqual([t["id"] for t in result], ["seed", "x"])
+
+    def test_left_alone_when_seed_is_nowhere_to_be_found(self):
+        curated = [self._by("x", "Beta", "A2"), self._by("y", "Gamma", "A3")]
+        result = promote_seed_first(curated, self._artist_seed(), curated)
+        self.assertEqual([t["id"] for t in result], ["x", "y"])
+
+    def test_empty_curation_is_returned_unchanged(self):
+        self.assertEqual(promote_seed_first([], self._artist_seed(), []), [])
+
+
+class SeedArtistCapTests(unittest.TestCase):
+    """The seed artist may occupy at most 20% of the station."""
+
+    def _seed(self):
+        return {"type": "artist", "id": "A1", "name": "Alpha",
+                "artist_id": "A1", "artist_name": "Alpha"}
+
+    def _by(self, tid, artist, artist_id=None):
+        track = _track(tid, artist=artist)
+        track["artist_id"] = artist_id
+        return track
+
+    def test_limit_is_twenty_percent(self):
+        self.assertEqual(seed_artist_limit(25), 5)
+        self.assertEqual(seed_artist_limit(50), 10)
+        self.assertEqual(seed_artist_limit(100), 20)
+
+    def test_limit_never_drops_below_one(self):
+        # promote_seed_first guarantees a seed track, so the cap must allow one
+        self.assertEqual(seed_artist_limit(4), 1)
+        self.assertEqual(seed_artist_limit(1), 1)
+
+    def test_limit_floors_rather_than_rounds_up(self):
+        # 9 * 0.2 = 1.8 -> 1, so the share is a true ceiling
+        self.assertEqual(seed_artist_limit(9), 1)
+
+    def test_excess_seed_tracks_are_replaced_from_the_pool(self):
+        curated = [self._by(f"s{i}", "Alpha", "A1") for i in range(10)]
+        pool = curated + [self._by(f"o{i}", f"Other{i}", f"A{i + 2}") for i in range(20)]
+
+        kept, stats = cap_seed_artist(curated, self._seed(), num_tracks=10, candidate_pool=pool)
+
+        seed_tracks = [t for t in kept if t["artist"] == "Alpha"]
+        self.assertEqual(len(seed_tracks), 2, "10 tracks -> 20% -> 2 seed tracks")
+        self.assertEqual(len(kept), 10, "gap is backfilled, not left short")
+        self.assertEqual(stats["dropped_for_seed_cap"], 8)
+        self.assertEqual(stats["backfilled"], 8)
+
+    def test_earliest_seed_tracks_are_the_ones_kept(self):
+        curated = [self._by(f"s{i}", "Alpha", "A1") for i in range(5)]
+        kept, _ = cap_seed_artist(curated, self._seed(), num_tracks=10, candidate_pool=curated)
+        self.assertEqual([t["id"] for t in kept], ["s0", "s1"], "curation order is respected")
+
+    def test_station_comes_up_short_when_pool_has_nobody_else(self):
+        # A thin library: the seed artist is all there is. Better a short station
+        # than a greatest-hits — build_shortfall then reports the gap.
+        curated = [self._by(f"s{i}", "Alpha", "A1") for i in range(10)]
+        kept, stats = cap_seed_artist(curated, self._seed(), num_tracks=10, candidate_pool=curated)
+        self.assertEqual(len(kept), 2)
+        self.assertEqual(stats["backfilled"], 0)
+
+    def test_other_artists_are_untouched(self):
+        curated = [self._by(f"o{i}", f"Other{i}", f"A{i + 2}") for i in range(10)]
+        kept, stats = cap_seed_artist(curated, self._seed(), num_tracks=10, candidate_pool=curated)
+        self.assertEqual(len(kept), 10)
+        self.assertEqual(stats["dropped_for_seed_cap"], 0)
+        self.assertEqual(stats["seed_artist_tracks"], 0)
+
+    def test_backfill_never_reintroduces_the_seed_artist(self):
+        curated = [self._by(f"s{i}", "Alpha", "A1") for i in range(6)]
+        # Pool is mostly seed tracks with a couple of others
+        pool = curated + [self._by("o1", "Other", "A9"), self._by("o2", "Other2", "A8")]
+        kept, _ = cap_seed_artist(curated, self._seed(), num_tracks=6, candidate_pool=pool)
+        seed_tracks = [t for t in kept if t["artist"] == "Alpha"]
+        self.assertEqual(len(seed_tracks), 1, "6 * 0.2 = 1.2 -> 1")
+        self.assertEqual(len(kept), 3, "only two non-seed tracks existed to backfill with")
+
+    def test_song_seed_caps_the_songs_artist(self):
+        seed = {"type": "song", "id": "S1", "name": "Track — Alpha",
+                "artist_id": "A1", "artist_name": "Alpha", "song_title": "Track"}
+        curated = [self._by(f"s{i}", "Alpha", "A1") for i in range(10)]
+        pool = curated + [self._by(f"o{i}", f"Other{i}", f"A{i + 2}") for i in range(20)]
+        kept, _ = cap_seed_artist(curated, seed, num_tracks=10, candidate_pool=pool)
+        self.assertEqual(len([t for t in kept if t["artist"] == "Alpha"]), 2)
+
+    def test_cap_then_promote_still_opens_with_the_seed(self):
+        # The two rules compose: capping keeps the earliest seed track, which
+        # promote_seed_first then moves to the front.
+        curated = (
+            [self._by(f"o{i}", f"Other{i}", f"A{i + 2}") for i in range(8)]
+            + [self._by(f"s{i}", "Alpha", "A1") for i in range(4)]
+        )
+        pool = curated + [self._by(f"x{i}", f"Extra{i}", f"B{i}") for i in range(10)]
+
+        kept, _ = cap_seed_artist(curated, self._seed(), num_tracks=10, candidate_pool=pool)
+        kept = promote_seed_first(kept, self._seed(), pool)
+
+        self.assertEqual(kept[0]["artist"], "Alpha", "station still opens with the seed")
+        self.assertEqual(len([t for t in kept if t["artist"] == "Alpha"]), 2)
+
+
+class ShortfallTests(unittest.TestCase):
+    """A thin library must be reported, not silently swallowed."""
+
+    def test_full_station_is_not_short(self):
+        report = build_shortfall(requested=25, delivered=25, candidate_pool_size=300)
+        self.assertFalse(report["is_short"])
+        self.assertEqual(report["missing"], 0)
+        self.assertEqual(report["message"], "")
+
+    def test_short_station_reports_the_gap(self):
+        report = build_shortfall(requested=25, delivered=12, candidate_pool_size=300,
+                                 distinct_artists=6)
+        self.assertTrue(report["is_short"])
+        self.assertEqual(report["missing"], 13)
+        self.assertEqual(report["delivered"], 12)
+        self.assertEqual(report["requested"], 25)
+        self.assertEqual(report["distinct_artists"], 6)
+        self.assertIn("12 of the 25", report["message"])
+
+    def test_thin_pool_is_called_out_in_the_message(self):
+        report = build_shortfall(requested=25, delivered=8, candidate_pool_size=8)
+        self.assertIn("8 candidate tracks", report["message"])
+
+    def test_empty_station_has_its_own_wording(self):
+        report = build_shortfall(requested=25, delivered=0, candidate_pool_size=0)
+        self.assertTrue(report["is_short"])
+        self.assertEqual(report["missing"], 25)
+        self.assertIn("didn't have anything similar enough", report["message"])
+
+    def test_over_delivery_is_not_negative(self):
+        report = build_shortfall(requested=10, delivered=12, candidate_pool_size=50)
+        self.assertFalse(report["is_short"])
+        self.assertEqual(report["missing"], 0)
+
+
+class LidarrUrlTests(unittest.TestCase):
+    """Album suggestions deep-link into Lidarr's /add/search?term= page."""
+
+    def test_builds_add_search_url_with_artist_and_album(self):
+        url = lidarr_add_url("Bon Iver", "For Emma, Forever Ago",
+                             base_url="https://lidarr.example.com")
+        self.assertEqual(
+            url,
+            "https://lidarr.example.com/add/search?term=Bon+Iver+For+Emma%2C+Forever+Ago"
+        )
+
+    def test_trailing_slash_does_not_double_up(self):
+        url = lidarr_add_url("Alpha", "Beta", base_url="https://lidarr.example.com/")
+        self.assertEqual(url, "https://lidarr.example.com/add/search?term=Alpha+Beta")
+
+    def test_artist_only_is_still_a_valid_search(self):
+        url = lidarr_add_url("Alpha", None, base_url="https://lidarr.example.com")
+        self.assertEqual(url, "https://lidarr.example.com/add/search?term=Alpha")
+
+    def test_no_lidarr_configured_yields_no_link(self):
+        self.assertIsNone(lidarr_add_url("Alpha", "Beta", base_url=""))
+        self.assertIsNone(lidarr_add_url("Alpha", "Beta", base_url="   "))
+
+    def test_blank_artist_and_album_yields_no_link(self):
+        self.assertIsNone(lidarr_add_url("", "", base_url="https://lidarr.example.com"))
+
+    def test_reads_lidarr_url_from_environment(self):
+        import os
+        previous = os.environ.get("LIDARR_URL")
+        os.environ["LIDARR_URL"] = "https://lidarr.example.com"
+        try:
+            self.assertEqual(
+                lidarr_add_url("Alpha", "Beta"),
+                "https://lidarr.example.com/add/search?term=Alpha+Beta"
+            )
+        finally:
+            if previous is None:
+                del os.environ["LIDARR_URL"]
+            else:
+                os.environ["LIDARR_URL"] = previous
 
 
 class CurateRadioTests(unittest.IsolatedAsyncioTestCase):

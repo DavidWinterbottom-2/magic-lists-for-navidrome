@@ -1174,25 +1174,63 @@ async function createRadioPlaylist() {
     }
 }
 
+// Track and album names come from the library/AI and are interpolated into
+// innerHTML below, so they must be escaped rather than trusted.
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[ch]);
+}
+
 function renderRadioResults(data) {
     const resultsPanel = document.getElementById('radio-results');
     const reasoningDiv = document.getElementById('radio-reasoning');
+    const shortfallDiv = document.getElementById('radio-shortfall');
     const suggestionsDiv = document.getElementById('radio-album-suggestions');
     if (!resultsPanel || !suggestionsDiv) return;
 
     reasoningDiv.textContent = data.reasoning || '';
 
+    // Say so when a thin library couldn't fill the requested station length
+    const shortfall = data.shortfall;
+    if (shortfallDiv) {
+        if (shortfall && shortfall.is_short) {
+            shortfallDiv.innerHTML = `
+                <div class="p-3 border border-amber-200 bg-amber-50 rounded-lg">
+                    <p class="text-sm font-semibold text-amber-900 mb-0">
+                        ${shortfall.delivered} of ${shortfall.requested} tracks
+                    </p>
+                    <p class="text-sm text-amber-800 mb-0">${escapeHtml(shortfall.message)}</p>
+                </div>
+            `;
+            shortfallDiv.classList.remove('hidden');
+        } else {
+            shortfallDiv.innerHTML = '';
+            shortfallDiv.classList.add('hidden');
+        }
+    }
+
     const suggestions = data.album_suggestions || [];
     if (!suggestions.length) {
         suggestionsDiv.innerHTML = '<p class="text-sm text-gray-500">No album suggestions were returned. Configure an AI provider to get recommendations.</p>';
     } else {
-        suggestionsDiv.innerHTML = suggestions.map(s => `
-            <div class="p-3 border border-gray-200 rounded-lg">
-                <p class="text-sm font-semibold text-gray-900 mb-0">${s.album}${s.year ? ` <span class="font-normal text-gray-500">(${s.year})</span>` : ''}</p>
-                <p class="text-sm text-gray-600 mb-0">${s.artist}</p>
-                ${s.reason ? `<p class="text-sm text-gray-500 italic mt-1 mb-0">${s.reason}</p>` : ''}
-            </div>
-        `).join('');
+        suggestionsDiv.innerHTML = suggestions.map(s => {
+            const title = `${escapeHtml(s.album)}${s.year ? ` <span class="font-normal text-gray-500">(${escapeHtml(s.year)})</span>` : ''}`;
+            // With Lidarr configured, the title opens its "Add New" search prefilled
+            const heading = s.lidarr_url
+                ? `<a href="${escapeHtml(s.lidarr_url)}" target="_blank" rel="noopener noreferrer"
+                      class="text-sm font-semibold text-gray-900 underline hover:text-gray-600">${title}</a>`
+                : `<span class="text-sm font-semibold text-gray-900">${title}</span>`;
+            return `
+                <div class="p-3 border border-gray-200 rounded-lg">
+                    <p class="mb-0">${heading}</p>
+                    <p class="text-sm text-gray-600 mb-0">${escapeHtml(s.artist)}</p>
+                    ${s.reason ? `<p class="text-sm text-gray-500 italic mt-1 mb-0">${escapeHtml(s.reason)}</p>` : ''}
+                    ${s.lidarr_url ? `<a href="${escapeHtml(s.lidarr_url)}" target="_blank" rel="noopener noreferrer"
+                        class="inline-block text-sm font-medium text-gray-900 underline mt-2">Add in Lidarr</a>` : ''}
+                </div>
+            `;
+        }).join('');
     }
 
     resultsPanel.classList.remove('hidden');
@@ -1379,26 +1417,54 @@ function renderPlaylists(playlists) {
     const container = document.getElementById('playlists-container');
     
     container.innerHTML = playlists.map(playlist => {
+        // The API already returns the track titles; show them behind a disclosure
+        // so a 50-track station doesn't bury the rest of the list.
+        const songs = Array.isArray(playlist.songs) ? playlist.songs : [];
+        const trackList = songs.length ? `
+            <details class="mt-3">
+                <summary class="text-sm font-medium text-gray-900 cursor-pointer">
+                    Show ${songs.length} track${songs.length === 1 ? '' : 's'}
+                </summary>
+                <ol class="text-sm text-gray-600 mt-2 mb-0 pl-5 list-decimal space-y-1">
+                    ${songs.map(song => {
+                        // Playlists created before tracks carried artist/album come
+                        // back with those fields empty — show just the title there.
+                        const artist = song.artist ? escapeHtml(song.artist) : '';
+                        const album = song.album ? escapeHtml(song.album) : '';
+                        const detail = [artist, album].filter(Boolean).join(' • ');
+                        return `
+                            <li>
+                                <span class="text-gray-900">${escapeHtml(song.title)}</span>
+                                ${detail ? `<span class="text-gray-500"> — ${detail}</span>` : ''}
+                            </li>
+                        `;
+                    }).join('')}
+                </ol>
+            </details>
+        ` : '';
+
         return `
             <div class="flex items-start justify-between p-4 border border-gray-200 rounded-lg mb-4">
                 <div class="flex-grow">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-1">${playlist.playlist_name}</h3>
+                    <h3 class="text-lg font-semibold text-gray-900 mb-1">${escapeHtml(playlist.playlist_name)}</h3>
                     <div class="text-sm text-gray-600 mb-2 space-y-1">
                         <p class="mb-0">
-                            ${playlist.track_count || 0} tracks • 
-                            Refreshes ${playlist.refresh_frequency || 'manually'} • 
+                            ${playlist.track_count || 0} tracks •
+                            Refreshes ${playlist.refresh_frequency || 'manually'} •
                             ${playlist.next_refresh ? `Next refresh ${formatNextRefresh(playlist.next_refresh)}` : 'No scheduled refresh'}
                         </p>
                         <p class="mb-0">
-                            Created ${formatFriendlyDate(playlist.created_at)} • 
+                            Created ${formatFriendlyDate(playlist.created_at)} •
                             ${playlist.last_refreshed ? `Refreshed ${formatFriendlyDate(playlist.last_refreshed)}` : 'Not refreshed yet'}
                         </p>
                     </div>
-                    ${playlist.reasoning ? `<p class="text-sm text-gray-600 m-0 mt-2 italic">${truncateText(playlist.reasoning, 140)}</p>` : ''}
+                    ${playlist.reasoning ? `<p class="text-sm text-gray-600 m-0 mt-2 italic">${escapeHtml(truncateText(playlist.reasoning, 140))}</p>` : ''}
+                    ${trackList}
                 </div>
                 <div class="flex-none">
                     <button
-                        onclick="deletePlaylist(${playlist.id}, '${playlist.playlist_name}')"
+                        data-playlist-name="${escapeHtml(playlist.playlist_name)}"
+                        onclick="deletePlaylist(${playlist.id}, this.dataset.playlistName)"
                         class="text-sm font-medium underline cursor-pointer border-none bg-transparent text-red-600 hover:text-red-800 px-2 py-1"
                     >
                         Delete
@@ -1788,3 +1854,13 @@ function handlePageNavigation(page) {
 }
 
 
+
+// Register the service worker so the app is installable and has an offline
+// fallback. Served from / (not /static) so its scope covers the whole SPA.
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(error => {
+            console.warn('Service worker registration failed:', error);
+        });
+    });
+}
