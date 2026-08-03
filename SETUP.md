@@ -54,7 +54,7 @@ export NAVIDROME_USERNAME=your_username
 export NAVIDROME_PASSWORD=your_password
 
 # Run the application
-python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 4545
 ```
 
 ### Option B: Docker Compose
@@ -68,29 +68,28 @@ docker-compose up -d
 ### 1. Check Navidrome Connection
 ```bash
 # MagicLists will automatically authenticate - just test the app endpoint
-curl "http://localhost:8000/api/artists"
+curl "http://localhost:4545/api/artists"
 ```
 
 ### 2. Test MagicLists API
 ```bash
 # Get artists
-curl "http://localhost:8000/api/artists"
+curl "http://localhost:4545/api/artists"
 
 # Create test "This Is" playlist
-curl -X POST "http://localhost:8000/api/create_playlist" \
+curl -X POST "http://localhost:4545/api/create_playlist" \
   -H "Content-Type: application/json" \
   -d '{"artist_ids": ["some_artist_id"], "playlist_length": 25}'
 
 # Get managed playlists
-curl "http://localhost:8000/api/playlists"
+curl "http://localhost:4545/api/playlists"
 
 # Check scheduler status
-curl "http://localhost:8000/api/scheduler/status"
+curl "http://localhost:4545/api/scheduler/status"
 ```
 
 ### 3. Access Web Interface
-- **Development**: http://localhost:8000
-- **Docker**: http://localhost:4545
+- **Development and Docker**: http://localhost:4545
 
 ## Troubleshooting
 
@@ -154,13 +153,13 @@ If you get 500 server errors when creating playlists (even though system checks 
 ### Manual Control
 ```bash
 # Check scheduler status
-curl "http://localhost:8000/api/scheduler/status"
+curl "http://localhost:4545/api/scheduler/status"
 
 # Start scheduler (auto-starts on app launch)
-curl -X POST "http://localhost:8000/api/scheduler/start"
+curl -X POST "http://localhost:4545/api/scheduler/start"
 
 # Manually trigger refresh check
-curl -X POST "http://localhost:8000/api/scheduler/trigger"
+curl -X POST "http://localhost:4545/api/scheduler/trigger"
 ```
 
 ### AI Configuration (Optional)
@@ -219,6 +218,6 @@ Without AI configuration, playlists use fallback algorithms based on play counts
 ## API Documentation
 
 Once running, visit:
-- **Web Interface**: http://localhost:8000 (dev) or http://localhost:4545 (Docker)
-- **API Docs**: http://localhost:8000/docs or http://localhost:4545/docs
-- **OpenAPI Schema**: http://localhost:8000/openapi.json
+- **Web Interface**: http://localhost:4545
+- **API Docs**: http://localhost:4545/docs
+- **OpenAPI Schema**: http://localhost:4545/openapi.json

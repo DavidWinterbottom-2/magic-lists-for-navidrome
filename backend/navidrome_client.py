@@ -339,11 +339,14 @@ class NavidromeClient:
                             "id": song.get("id"),
                             "title": song.get("title"),
                             "artist": artist_name,  # Include artist name for AI processing
+                            "artist_id": artist_id,
                             "album": album_name,
-                            "year": album_year,
-                            "play_count": song.get("playCount", 0)
+                            "year": song.get("year", album_year),
+                            "genre": song.get("genre"),
+                            "play_count": song.get("playCount", 0),
+                            "local_library_likes": song.get("starred") is not None
                         })
-            
+
             return tracks_list
                 
         except httpx.RequestError as e:
@@ -816,6 +819,249 @@ class NavidromeClient:
             raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
         except Exception as e:
             raise Exception(f"Unexpected error fetching genre stats: {e}")
+
+    async def get_song(self, song_id: str) -> Dict[str, Any]:
+        """Fetch a single song's metadata using the Subsonic getSong API
+
+        Args:
+            song_id: The song ID
+
+        Returns:
+            Track dict with format: {id, title, artist, artist_id, album, year, genre, play_count}
+        """
+        try:
+            await self._ensure_authenticated()
+
+            params = self._get_subsonic_params()
+            params["id"] = song_id
+
+            response = await self.client.get(
+                f"{self.base_url}/rest/getSong.view",
+                params=params
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            subsonic_response = data.get("subsonic-response", {})
+            if subsonic_response.get("status") != "ok":
+                error = subsonic_response.get("error", {})
+                raise Exception(f"Subsonic API error: {error.get('message', 'Unknown error')}")
+
+            song = subsonic_response.get("song", {})
+            if not song:
+                raise Exception(f"Song not found: {song_id}")
+
+            return {
+                "id": song.get("id"),
+                "title": song.get("title"),
+                "artist": song.get("artist"),
+                "artist_id": song.get("artistId"),
+                "album": song.get("album"),
+                "year": song.get("year"),
+                "genre": song.get("genre"),
+                "play_count": song.get("playCount", 0),
+                "local_library_likes": song.get("starred") is not None
+            }
+
+        except httpx.RequestError as e:
+            raise Exception(f"Network error connecting to Navidrome: {e}")
+        except httpx.HTTPStatusError as e:
+            raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
+        except Exception as e:
+            raise Exception(f"Unexpected error fetching song {song_id}: {e}")
+
+    async def search_songs(self, query: str, count: int = 20, library_ids: List[str] = None) -> List[Dict[str, Any]]:
+        """Search for songs by title/artist using the Subsonic search3 API
+
+        Args:
+            query: Search query (song title, artist, etc.)
+            count: Maximum number of songs to return
+            library_ids: Optional list of library IDs to filter results
+
+        Returns:
+            List of song dicts with format: {id, title, artist, album, year}
+        """
+        try:
+            await self._ensure_authenticated()
+
+            params = self._get_subsonic_params()
+            params["query"] = query
+            params["artistCount"] = 0
+            params["albumCount"] = 0
+            params["songCount"] = count
+
+            if library_ids and len(library_ids) > 0:
+                params["musicFolderId"] = library_ids[0]
+
+            response = await self.client.get(
+                f"{self.base_url}/rest/search3.view",
+                params=params
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            subsonic_response = data.get("subsonic-response", {})
+            if subsonic_response.get("status") != "ok":
+                error = subsonic_response.get("error", {})
+                raise Exception(f"Subsonic API error: {error.get('message', 'Unknown error')}")
+
+            search_result = subsonic_response.get("searchResult3", {})
+            songs = search_result.get("song", [])
+
+            results = []
+            for song in songs:
+                results.append({
+                    "id": song.get("id"),
+                    "title": song.get("title"),
+                    "artist": song.get("artist"),
+                    "artist_id": song.get("artistId"),
+                    "album": song.get("album"),
+                    "year": song.get("year"),
+                    "genre": song.get("genre")
+                })
+
+            print(f"🔎 Song search for '{query}' returned {len(results)} results")
+            return results
+
+        except httpx.RequestError as e:
+            raise Exception(f"Network error connecting to Navidrome: {e}")
+        except httpx.HTTPStatusError as e:
+            raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
+        except Exception as e:
+            raise Exception(f"Unexpected error searching songs for '{query}': {e}")
+
+    async def get_similar_artists(self, artist_id: str, count: int = 20) -> List[Dict[str, Any]]:
+        """Fetch artists similar to the given artist using the Subsonic getArtistInfo2 API
+
+        Similar-artist data is provided by Navidrome's external agents (e.g. Last.fm).
+        Only artists that exist in the local library carry a usable "id"; artists
+        without an id are external suggestions and are skipped here.
+
+        Args:
+            artist_id: The seed artist ID
+            count: Maximum number of similar artists to request
+
+        Returns:
+            List of similar artists present in the library: {id, name}
+        """
+        try:
+            await self._ensure_authenticated()
+
+            params = self._get_subsonic_params()
+            params["id"] = artist_id
+            params["count"] = count
+
+            response = await self.client.get(
+                f"{self.base_url}/rest/getArtistInfo2.view",
+                params=params
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            subsonic_response = data.get("subsonic-response", {})
+            if subsonic_response.get("status") != "ok":
+                error = subsonic_response.get("error", {})
+                print(f"⚠️ getArtistInfo2 error: {error.get('message', 'Unknown error')}")
+                return []
+
+            artist_info = subsonic_response.get("artistInfo2", {})
+            similar = artist_info.get("similarArtist", [])
+
+            # API may return a single object instead of a list
+            if isinstance(similar, dict):
+                similar = [similar]
+
+            results = []
+            for artist in similar:
+                artist_id_val = artist.get("id")
+                # Skip external-only suggestions (id "-1" or missing) that aren't in the library
+                if artist_id_val and str(artist_id_val) != "-1":
+                    results.append({
+                        "id": artist_id_val,
+                        "name": artist.get("name")
+                    })
+
+            print(f"🎯 Found {len(results)} similar artists in library for artist {artist_id}")
+            return results
+
+        except httpx.RequestError as e:
+            raise Exception(f"Network error connecting to Navidrome: {e}")
+        except httpx.HTTPStatusError as e:
+            raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
+        except Exception as e:
+            print(f"⚠️ Unexpected error fetching similar artists for {artist_id}: {e}")
+            return []
+
+    async def get_similar_songs(self, artist_id: str, count: int = 50, library_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """Fetch similar-style songs for a seed artist via Subsonic getSimilarSongs2.
+
+        getSimilarSongs2 returns a Last.fm-backed collection of songs drawn from
+        the seed artist and similar artists — all resident in the local library —
+        which makes it a one-call candidate pool for a "radio" station.
+
+        Args:
+            artist_id: The seed artist ID (getSimilarSongs2 is artist-keyed)
+            count: Maximum number of similar songs to request
+            library_ids: Optional list of library IDs to filter results
+
+        Returns:
+            List of tracks shaped like get_tracks_by_artist:
+            {id, title, artist, artist_id, album, year, genre, play_count, local_library_likes}
+        """
+        try:
+            await self._ensure_authenticated()
+
+            params = self._get_subsonic_params()
+            params["id"] = artist_id
+            params["count"] = count
+            if library_ids:
+                params["musicFolderId"] = library_ids[0]
+
+            response = await self.client.get(
+                f"{self.base_url}/rest/getSimilarSongs2.view",
+                params=params
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            subsonic_response = data.get("subsonic-response", {})
+            if subsonic_response.get("status") != "ok":
+                error = subsonic_response.get("error", {})
+                print(f"⚠️ getSimilarSongs2 error: {error.get('message', 'Unknown error')}")
+                return []
+
+            similar = subsonic_response.get("similarSongs2", {}).get("song", [])
+            # API may return a single object instead of a list
+            if isinstance(similar, dict):
+                similar = [similar]
+
+            tracks = []
+            for song in similar:
+                sid = song.get("id")
+                if not sid:
+                    continue
+                tracks.append({
+                    "id": sid,
+                    "title": song.get("title"),
+                    "artist": song.get("artist"),
+                    "artist_id": song.get("artistId"),
+                    "album": song.get("album"),
+                    "year": song.get("year", 0),
+                    "genre": song.get("genre"),
+                    "play_count": song.get("playCount", 0),
+                    "local_library_likes": song.get("starred") is not None
+                })
+
+            print(f"🎯 Found {len(tracks)} similar songs for artist {artist_id}")
+            return tracks
+
+        except httpx.RequestError as e:
+            raise Exception(f"Network error connecting to Navidrome: {e}")
+        except httpx.HTTPStatusError as e:
+            raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
+        except Exception as e:
+            print(f"⚠️ Unexpected error fetching similar songs for {artist_id}: {e}")
+            return []
 
     async def create_playlist(self, name: str, track_ids: List[str], comment: str = None) -> str:
         """Create a new playlist in Navidrome using Subsonic API
