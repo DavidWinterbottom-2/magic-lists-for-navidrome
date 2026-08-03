@@ -1,0 +1,63 @@
+name: publish
+
+# Publish the app as a GHCR image so docker-infra can consume it as
+# `ghcr.io/davidwinterbottom-2/magic-lists-for-navidrome:latest` and Watchtower
+# can auto-update the running container (REPO-STANDARDS §2/§6).
+#
+# Every build is tagged twice: `:latest` for Watchtower to follow, and the commit
+# SHA for traceability and rollback — a pure `:latest` service is versioned by
+# its image SHA, so that tag is how you identify and pin what is actually running.
+
+on:
+  push:
+    branches: [main]
+  # Lets you rebuild the image without an empty commit (e.g. after a base-image CVE)
+  workflow_dispatch:
+
+concurrency:
+  # A newer push to main supersedes an in-flight build; never race two pushes to
+  # `:latest`, or the tag can end up pointing at the older of the two.
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # Scoped to this run by `permissions.packages: write` above — no PAT needed
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # Lowercase is required by the registry and matches the §6 naming rule
+          images: ghcr.io/davidwinterbottom-2/magic-lists-for-navidrome
+          tags: |
+            type=raw,value=latest
+            type=sha,format=long
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache through the registry so a rebuild doesn't reinstall every
+          # dependency from scratch on each push to main.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
