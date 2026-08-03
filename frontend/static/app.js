@@ -1191,49 +1191,61 @@ function renderRadioResults(data) {
 
     reasoningDiv.textContent = data.reasoning || '';
 
-    // Say so when a thin library couldn't fill the requested station length
-    const shortfall = data.shortfall;
+    const shortfallHtml = renderShortfallHtml(data.shortfall);
     if (shortfallDiv) {
-        if (shortfall && shortfall.is_short) {
-            shortfallDiv.innerHTML = `
-                <div class="p-3 border border-amber-200 bg-amber-50 rounded-lg">
-                    <p class="text-sm font-semibold text-amber-900 mb-0">
-                        ${shortfall.delivered} of ${shortfall.requested} tracks
-                    </p>
-                    <p class="text-sm text-amber-800 mb-0">${escapeHtml(shortfall.message)}</p>
-                </div>
-            `;
-            shortfallDiv.classList.remove('hidden');
-        } else {
-            shortfallDiv.innerHTML = '';
-            shortfallDiv.classList.add('hidden');
-        }
+        shortfallDiv.innerHTML = shortfallHtml;
+        shortfallDiv.classList.toggle('hidden', !shortfallHtml);
     }
 
     const suggestions = data.album_suggestions || [];
-    if (!suggestions.length) {
-        suggestionsDiv.innerHTML = '<p class="text-sm text-gray-500">No album suggestions were returned. Configure an AI provider to get recommendations.</p>';
-    } else {
-        suggestionsDiv.innerHTML = suggestions.map(s => {
-            const title = `${escapeHtml(s.album)}${s.year ? ` <span class="font-normal text-gray-500">(${escapeHtml(s.year)})</span>` : ''}`;
-            // With Lidarr configured, the title opens its "Add New" search prefilled
-            const heading = s.lidarr_url
-                ? `<a href="${escapeHtml(s.lidarr_url)}" target="_blank" rel="noopener noreferrer"
-                      class="text-sm font-semibold text-gray-900 underline hover:text-gray-600">${title}</a>`
-                : `<span class="text-sm font-semibold text-gray-900">${title}</span>`;
-            return `
-                <div class="p-3 border border-gray-200 rounded-lg">
-                    <p class="mb-0">${heading}</p>
-                    <p class="text-sm text-gray-600 mb-0">${escapeHtml(s.artist)}</p>
-                    ${s.reason ? `<p class="text-sm text-gray-500 italic mt-1 mb-0">${escapeHtml(s.reason)}</p>` : ''}
-                    ${s.lidarr_url ? `<a href="${escapeHtml(s.lidarr_url)}" target="_blank" rel="noopener noreferrer"
-                        class="inline-block text-sm font-medium text-gray-900 underline mt-2">Add in Lidarr</a>` : ''}
-                </div>
-            `;
-        }).join('');
-    }
+    suggestionsDiv.innerHTML = suggestions.length
+        ? renderAlbumSuggestionsHtml(suggestions)
+        : '<p class="text-sm text-gray-500">No album suggestions were returned. Configure an AI provider to get recommendations.</p>';
 
     resultsPanel.classList.remove('hidden');
+}
+
+// The build detail below is rendered both when a station is first created and
+// against a stored playlist in Manage Playlists, so that a rebuild — whether you
+// pressed the button or the scheduler did it overnight — shows what a first
+// build showed. Hence plain HTML-returning helpers rather than DOM writes.
+
+function renderShortfallHtml(shortfall) {
+    // Say so when a thin library couldn't fill the requested length, or when a
+    // lookup failed — a full-length station built from a fallback pool is still
+    // a degraded one, and looks suspiciously like the previous run.
+    const warnings = (shortfall && shortfall.warnings) || [];
+    if (!shortfall || (!shortfall.is_short && !warnings.length)) return '';
+
+    const heading = shortfall.is_short
+        ? `${shortfall.delivered} of ${shortfall.requested} tracks`
+        : 'Built from a reduced pool';
+    return `
+        <div class="p-3 border border-amber-200 bg-amber-50 rounded-lg">
+            <p class="text-sm font-semibold text-amber-900 mb-0">${escapeHtml(heading)}</p>
+            <p class="text-sm text-amber-800 mb-0">${escapeHtml(shortfall.message)}</p>
+        </div>
+    `;
+}
+
+function renderAlbumSuggestionsHtml(suggestions) {
+    return (suggestions || []).map(s => {
+        const title = `${escapeHtml(s.album)}${s.year ? ` <span class="font-normal text-gray-500">(${escapeHtml(s.year)})</span>` : ''}`;
+        // With Lidarr configured, the title opens its "Add New" search prefilled
+        const heading = s.lidarr_url
+            ? `<a href="${escapeHtml(s.lidarr_url)}" target="_blank" rel="noopener noreferrer"
+                  class="text-sm font-semibold text-gray-900 underline hover:text-gray-600">${title}</a>`
+            : `<span class="text-sm font-semibold text-gray-900">${title}</span>`;
+        return `
+            <div class="p-3 border border-gray-200 rounded-lg">
+                <p class="mb-0">${heading}</p>
+                <p class="text-sm text-gray-600 mb-0">${escapeHtml(s.artist)}</p>
+                ${s.reason ? `<p class="text-sm text-gray-500 italic mt-1 mb-0">${escapeHtml(s.reason)}</p>` : ''}
+                ${s.lidarr_url ? `<a href="${escapeHtml(s.lidarr_url)}" target="_blank" rel="noopener noreferrer"
+                    class="inline-block text-sm font-medium text-gray-900 underline mt-2">Add in Lidarr</a>` : ''}
+            </div>
+        `;
+    }).join('');
 }
 
 // Re-discover Weekly functionality
@@ -1420,6 +1432,13 @@ function renderPlaylists(playlists) {
         // The API already returns the track titles; show them behind a disclosure
         // so a 50-track station doesn't bury the rest of the list.
         const songs = Array.isArray(playlist.songs) ? playlist.songs : [];
+        // Stored at build time, so this shows for a scheduled rebuild too — the
+        // one case where nobody was watching when it happened.
+        const buildNotice = renderShortfallHtml(playlist.build_info);
+        // The length the playlist ASKS for, which can differ from what it got
+        const targetLength = playlist.playlist_length || songs.length || 25;
+        const currentFrequency = playlist.refresh_frequency || 'none';
+        const suggestions = playlist.album_suggestions || [];
         const trackList = songs.length ? `
             <details class="mt-3">
                 <summary class="text-sm font-medium text-gray-900 cursor-pointer">
@@ -1459,13 +1478,58 @@ function renderPlaylists(playlists) {
                         </p>
                     </div>
                     ${playlist.reasoning ? `<p class="text-sm text-gray-600 m-0 mt-2 italic">${escapeHtml(truncateText(playlist.reasoning, 140))}</p>` : ''}
+                    ${buildNotice ? `<div class="mt-3">${buildNotice}</div>` : ''}
                     ${trackList}
+                    ${suggestions.length ? `
+                        <details class="mt-3">
+                            <summary class="text-sm font-medium text-gray-900 cursor-pointer">
+                                ${suggestions.length} album${suggestions.length === 1 ? '' : 's'} to add to your library
+                            </summary>
+                            <div class="space-y-3 mt-2">${renderAlbumSuggestionsHtml(suggestions)}</div>
+                        </details>
+                    ` : ''}
+                    <div id="recreate-options-${playlist.id}" class="hidden mt-3 p-3 border border-gray-200 rounded-lg">
+                        <p class="text-sm text-gray-600 mb-3">
+                            Rebuilding replaces this playlist's tracks in both Magic Lists and Navidrome.
+                        </p>
+                        <div class="flex flex-wrap gap-4 items-end">
+                            <label class="text-sm text-gray-900">
+                                <span class="block text-xs text-gray-500 mb-1">Tracks</span>
+                                <select id="recreate-length-${playlist.id}"
+                                        class="py-1.5 px-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                                    ${[25, 50, 100].map(n =>
+                                        `<option value="${n}" ${targetLength === n ? 'selected' : ''}>${n} tracks</option>`
+                                    ).join('')}
+                                </select>
+                            </label>
+                            <label class="text-sm text-gray-900">
+                                <span class="block text-xs text-gray-500 mb-1">Refresh</span>
+                                <select id="recreate-frequency-${playlist.id}"
+                                        class="py-1.5 px-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-900">
+                                    ${[['none', "Don't refresh"], ['daily', 'Daily'], ['weekly', 'Weekly'], ['monthly', 'Monthly']].map(
+                                        ([value, label]) => `<option value="${value}" ${currentFrequency === value ? 'selected' : ''}>${label}</option>`
+                                    ).join('')}
+                                </select>
+                            </label>
+                            <button
+                                data-playlist-name="${escapeHtml(playlist.playlist_name)}"
+                                onclick="submitRecreate(${playlist.id}, this.dataset.playlistName)"
+                                class="bg-gray-900 text-white text-sm font-bold py-1.5 px-4 rounded-lg"
+                            >
+                                Rebuild now
+                            </button>
+                            <button onclick="toggleRecreateOptions(${playlist.id})"
+                                    class="text-sm font-medium underline cursor-pointer border-none bg-transparent text-gray-600 px-2 py-1">
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <div class="flex-none flex items-center gap-x-1">
                     <button
                         id="recreate-btn-${playlist.id}"
                         data-playlist-name="${escapeHtml(playlist.playlist_name)}"
-                        onclick="recreatePlaylist(${playlist.id}, this.dataset.playlistName)"
+                        onclick="toggleRecreateOptions(${playlist.id})"
                         class="text-sm font-medium underline cursor-pointer border-none bg-transparent text-gray-600 hover:text-gray-900 px-2 py-1 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         Recreate
@@ -1483,11 +1547,28 @@ function renderPlaylists(playlists) {
     }).join('');
 }
 
-async function recreatePlaylist(playlistId, playlistName) {
-    if (!confirm(`Rebuild "${playlistName}" now?\n\nThis replaces its current tracks with a freshly generated selection, in both Magic Lists and Navidrome.`)) {
-        return;
-    }
+// Rebuilding is the natural moment to change your mind about length or cadence
+// — especially to raise the length after a short build — so the button opens a
+// small panel rather than firing straight away.
+function toggleRecreateOptions(playlistId) {
+    const panel = document.getElementById(`recreate-options-${playlistId}`);
+    if (panel) panel.classList.toggle('hidden');
+}
 
+async function submitRecreate(playlistId, playlistName) {
+    const lengthEl = document.getElementById(`recreate-length-${playlistId}`);
+    const freqEl = document.getElementById(`recreate-frequency-${playlistId}`);
+    const options = {};
+    if (lengthEl) options.playlist_length = parseInt(lengthEl.value, 10);
+    if (freqEl) options.refresh_frequency = freqEl.value;
+
+    const panel = document.getElementById(`recreate-options-${playlistId}`);
+    if (panel) panel.classList.add('hidden');
+
+    await recreatePlaylist(playlistId, playlistName, options);
+}
+
+async function recreatePlaylist(playlistId, playlistName, options = {}) {
     const button = document.getElementById(`recreate-btn-${playlistId}`);
     if (button) {
         button.disabled = true;
@@ -1498,7 +1579,11 @@ async function recreatePlaylist(playlistId, playlistName) {
     showToast('loading', `Rebuilding "${playlistName}"...`, 0);
 
     try {
-        const response = await fetch(`/api/playlists/${playlistId}/recreate`, { method: 'POST' });
+        const response = await fetch(`/api/playlists/${playlistId}/recreate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(options)
+        });
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));

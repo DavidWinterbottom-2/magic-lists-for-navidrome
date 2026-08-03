@@ -34,6 +34,18 @@ class CreateRadioPlaylistRequest(BaseModel):
     playlist_length: int = 25  # Number of tracks to include
     library_ids: List[str] = []  # List of library IDs to filter tracks
 
+class RecreatePlaylistRequest(BaseModel):
+    """Options for a manual rebuild.
+
+    Both are optional and default to leaving the playlist's existing settings
+    alone. They exist because a rebuild is the natural moment to change your
+    mind — particularly to raise the length again after a short build, which
+    otherwise needs deleting and recreating the playlist from scratch.
+    """
+    playlist_length: Optional[int] = None       # None = keep the stored length
+    refresh_frequency: Optional[str] = None     # None = keep the current schedule
+
+
 class AlbumSuggestion(BaseModel):
     """Schema for a suggested album not currently in the library"""
     artist: str

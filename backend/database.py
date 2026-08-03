@@ -64,6 +64,24 @@ class DatabaseManager:
                 # Column already exists or other error - ignore
                 pass
 
+            # Add album_suggestions column (JSON array of albums the AI suggested
+            # buying). Stored rather than returned once, so the suggestions from a
+            # scheduled rebuild are still there when you next open the playlist.
+            try:
+                await db.execute("ALTER TABLE playlists ADD COLUMN album_suggestions TEXT")
+            except:
+                # Column already exists or other error - ignore
+                pass
+
+            # Add build_info column (JSON: how the last build went — shortfall
+            # counts and any recall warnings). Same reasoning as above: a
+            # scheduled rebuild has nobody watching, so the outcome has to persist.
+            try:
+                await db.execute("ALTER TABLE playlists ADD COLUMN build_info TEXT")
+            except:
+                # Column already exists or other error - ignore
+                pass
+
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS scheduled_playlists (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -157,18 +175,22 @@ class DatabaseManager:
 
             await db.commit()
     
-    async def create_playlist(self, artist_id: str, playlist_name: str, songs: Optional[List[str]] = None, reasoning: Optional[str] = None, navidrome_playlist_id: Optional[str] = None, playlist_length: Optional[int] = None, library_ids: Optional[List[str]] = None) -> Optional[Playlist]:
+    async def create_playlist(self, artist_id: str, playlist_name: str, songs: Optional[List[str]] = None, reasoning: Optional[str] = None, navidrome_playlist_id: Optional[str] = None, playlist_length: Optional[int] = None, library_ids: Optional[List[str]] = None, album_suggestions: Optional[List[Dict]] = None, build_info: Optional[Dict] = None) -> Optional[Playlist]:
         """Create a new playlist in the database"""
         await self.init_db()
         
         songs_json = json.dumps(songs or [])
         library_ids_json = json.dumps(library_ids or [])
+        # Stored as JSON so the same detail shown at creation survives to be
+        # shown again later, including after an unattended scheduled rebuild.
+        suggestions_json = json.dumps(album_suggestions) if album_suggestions is not None else None
+        build_info_json = json.dumps(build_info) if build_info is not None else None
 
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute("""
-                INSERT INTO playlists (artist_id, playlist_name, songs, reasoning, navidrome_playlist_id, playlist_length, library_ids)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (artist_id, playlist_name, songs_json, reasoning, navidrome_playlist_id, playlist_length, library_ids_json))
+                INSERT INTO playlists (artist_id, playlist_name, songs, reasoning, navidrome_playlist_id, playlist_length, library_ids, album_suggestions, build_info)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (artist_id, playlist_name, songs_json, reasoning, navidrome_playlist_id, playlist_length, library_ids_json, suggestions_json, build_info_json))
             
             playlist_id = cursor.lastrowid
             await db.commit()
@@ -265,7 +287,9 @@ class DatabaseManager:
                     p.playlist_length,
                     sp.refresh_frequency,
                     sp.next_refresh,
-                    sp.playlist_type
+                    sp.playlist_type,
+                    p.album_suggestions,
+                    p.build_info
                 FROM playlists p
                 LEFT JOIN scheduled_playlists sp ON p.navidrome_playlist_id = sp.navidrome_playlist_id
                 ORDER BY p.created_at DESC
@@ -286,7 +310,9 @@ class DatabaseManager:
                         "playlist_length": row[9],
                         "refresh_frequency": row[10],
                         "next_refresh": row[11],
-                        "playlist_type": row[12]
+                        "playlist_type": row[12],
+                        "album_suggestions": json.loads(row[13]) if row[13] else [],
+                        "build_info": json.loads(row[14]) if row[14] else None
                     }
                     playlists.append(playlist_data)
         
@@ -307,10 +333,13 @@ class DatabaseManager:
                     p.created_at, 
                     p.updated_at,
                     p.navidrome_playlist_id,
+                    p.playlist_length,
                     sp.refresh_frequency,
                     sp.next_refresh,
                     sp.playlist_type,
-                    sp.id
+                    sp.id,
+                    p.album_suggestions,
+                    p.build_info
                 FROM playlists p
                 LEFT JOIN scheduled_playlists sp ON p.navidrome_playlist_id = sp.navidrome_playlist_id
                 WHERE p.id = ?
@@ -327,13 +356,16 @@ class DatabaseManager:
                         "created_at": row[5],
                         "updated_at": row[6],
                         "navidrome_playlist_id": row[7],
-                        "refresh_frequency": row[8],
-                        "next_refresh": row[9],
-                        "playlist_type": row[10],
+                        "playlist_length": row[8],
+                        "refresh_frequency": row[9],
+                        "next_refresh": row[10],
+                        "playlist_type": row[11],
                         # The scheduled_playlists row id, or None when this
                         # playlist has no schedule. A manual recreate needs it to
                         # know whether there is a next-refresh time to advance.
-                        "scheduled_id": row[11]
+                        "scheduled_id": row[12],
+                        "album_suggestions": json.loads(row[13]) if row[13] else [],
+                        "build_info": json.loads(row[14]) if row[14] else None
                     }
 
         return None
@@ -362,6 +394,23 @@ class DatabaseManager:
             await db.commit()
             return cursor.rowcount > 0
     
+    async def update_playlist_length(self, playlist_id: int, playlist_length: int) -> bool:
+        """Change the track count a playlist targets on its next rebuild.
+
+        Stored separately from the delivered count so a short build never
+        shrinks what the playlist asks for next time.
+        """
+        await self.init_db()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("""
+                UPDATE playlists
+                SET playlist_length = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE id = ?
+            """, (playlist_length, playlist_id))
+            await db.commit()
+            return cursor.rowcount > 0
+
     async def update_playlist_songs(self, playlist_id: int, songs: List[str]) -> bool:
         """Update the songs in a playlist"""
         await self.init_db()
@@ -478,18 +527,33 @@ class DatabaseManager:
             await db.commit()
             return cursor.rowcount > 0
     
-    async def update_playlist_content(self, navidrome_playlist_id: str, songs: List[str], reasoning: Optional[str] = None) -> bool:
-        """Update the songs and reasoning for a playlist during refresh"""
+    async def update_playlist_content(self, navidrome_playlist_id: str, songs: List[str], reasoning: Optional[str] = None, album_suggestions: Optional[List[Dict]] = None, build_info: Optional[Dict] = None) -> bool:
+        """Update the songs and reasoning for a playlist during refresh
+
+        `album_suggestions` and `build_info` are only written when supplied, so a
+        playlist type that doesn't produce them (This Is, Re-Discover) leaves
+        whatever is already stored alone rather than blanking it.
+        """
         await self.init_db()
         
         songs_json = json.dumps(songs)
-        
+
+        sets = ["songs = ?", "reasoning = ?"]
+        values = [songs_json, reasoning]
+        if album_suggestions is not None:
+            sets.append("album_suggestions = ?")
+            values.append(json.dumps(album_suggestions))
+        if build_info is not None:
+            sets.append("build_info = ?")
+            values.append(json.dumps(build_info))
+        values.append(navidrome_playlist_id)
+
         async with aiosqlite.connect(self.db_path) as db:
-            cursor = await db.execute("""
+            cursor = await db.execute(f"""
                 UPDATE playlists 
-                SET songs = ?, reasoning = ?, last_refreshed = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                SET {', '.join(sets)}, last_refreshed = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
                 WHERE navidrome_playlist_id = ?
-            """, (songs_json, reasoning, navidrome_playlist_id))
+            """, tuple(values))
             
             await db.commit()
             return cursor.rowcount > 0

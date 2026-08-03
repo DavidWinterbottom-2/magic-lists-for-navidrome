@@ -14,6 +14,8 @@ import os
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote_plus
 
+from .errors import describe_exception
+
 logger = logging.getLogger("scheduler")
 
 # Cap the candidate pool before smart-filtering to keep payloads/latency sane.
@@ -58,7 +60,8 @@ def build_shortfall(
     requested: int,
     delivered: int,
     candidate_pool_size: int = 0,
-    distinct_artists: int = 0
+    distinct_artists: int = 0,
+    warnings: Optional[List[str]] = None
 ) -> Dict[str, Any]:
     """Describe the gap between the station that was asked for and the one built.
 
@@ -67,8 +70,14 @@ def build_shortfall(
     artists. That is worth telling the listener explicitly — silently returning
     12 tracks for a 25-track request reads as a bug, and the gap is exactly what
     the album suggestions below it are there to fix.
+
+    `warnings` carries recall failures from the candidate pool. A full-length
+    station can still be a degraded one — if the similar-songs lookup timed out,
+    the station was rebuilt from a fallback and will look much like the last one
+    however many tracks it has. That needs reporting even when nothing is short.
     """
     missing = max(0, requested - delivered)
+    warnings = list(warnings or [])
 
     if missing == 0:
         return {
@@ -77,7 +86,8 @@ def build_shortfall(
             "missing": 0,
             "is_short": False,
             "distinct_artists": distinct_artists,
-            "message": "",
+            "warnings": warnings,
+            "message": " ".join(warnings),
         }
 
     if delivered == 0:
@@ -98,24 +108,20 @@ def build_shortfall(
     else:
         detail = "Adding the albums below would give this station more to work with."
 
+    # A recall failure explains the gap far better than "your library is thin",
+    # so it leads the message when there is one.
+    if warnings:
+        detail = " ".join(warnings)
+
     return {
         "requested": requested,
         "delivered": delivered,
         "missing": missing,
         "is_short": True,
         "distinct_artists": distinct_artists,
+        "warnings": warnings,
         "message": f"{message} {detail}",
     }
-
-
-def describe_exception(exc: Exception) -> str:
-    """Render an exception for logs, falling back to its type name.
-
-    httpx timeouts stringify to "", which produced log lines that ended at
-    "Network error connecting to Navidrome:" with no reason attached.
-    """
-    text = str(exc).strip()
-    return text if text else type(exc).__name__
 
 
 def artist_key(track: Dict[str, Any]) -> str:
@@ -318,6 +324,11 @@ class RadioProcessor:
 
     def __init__(self, nav_client):
         self.nav_client = nav_client
+        # Recall failures that degraded the pool. Each step below is allowed to
+        # fail so a station can still be built, but a station built from a
+        # fallback is a materially worse station and the listener should be told
+        # rather than left wondering why nothing changed.
+        self.pool_warnings: List[str] = []
 
     async def resolve_seed(
         self,
@@ -381,6 +392,7 @@ class RadioProcessor:
         """
         candidates: List[Dict[str, Any]] = []
         seen_ids = set()
+        self.pool_warnings = []
 
         def add_tracks(tracks: List[Dict[str, Any]]):
             for track in tracks:
@@ -399,7 +411,13 @@ class RadioProcessor:
                 add_tracks(similar_songs)
                 logger.info(f"📻 Radio: {len(similar_songs)} similar songs for seed '{artist_name}'")
             except Exception as e:
-                logger.warning(f"⚠️ Radio: failed to fetch similar songs: {e}")
+                reason = describe_exception(e)
+                logger.warning(f"⚠️ Radio: failed to fetch similar songs: {reason}")
+                self.pool_warnings.append(
+                    "The similar-songs lookup failed "
+                    f"({reason}) — this station was built from a reduced pool, "
+                    "so it may look much like the last one."
+                )
 
         # 2. Seed artist tracks — ensure the seed itself is present in the pool.
         if artist_id:
@@ -408,7 +426,9 @@ class RadioProcessor:
                 add_tracks(seed_tracks)
                 logger.info(f"📻 Radio: {len(seed_tracks)} tracks from seed artist '{artist_name}'")
             except Exception as e:
-                logger.warning(f"⚠️ Radio: failed to fetch seed artist tracks: {e}")
+                reason = describe_exception(e)
+                logger.warning(f"⚠️ Radio: failed to fetch seed artist tracks: {reason}")
+                self.pool_warnings.append(f"Could not load the seed artist's tracks ({reason}).")
 
         # 3. Backfill from similar artists — only when the pool is still thin.
         similar_artists = []
@@ -416,7 +436,9 @@ class RadioProcessor:
             try:
                 similar_artists = await self.nav_client.get_similar_artists(artist_id, MAX_SIMILAR_ARTISTS)
             except Exception as e:
-                logger.warning(f"⚠️ Radio: failed to fetch similar artists: {e}")
+                reason = describe_exception(e)
+                logger.warning(f"⚠️ Radio: failed to fetch similar artists: {reason}")
+                self.pool_warnings.append(f"Could not load similar artists ({reason}).")
 
         for similar in similar_artists[:MAX_SIMILAR_ARTISTS]:
             if len(candidates) >= MAX_CANDIDATE_TRACKS:
@@ -435,7 +457,9 @@ class RadioProcessor:
                 genre_tracks = await self.nav_client.get_tracks_by_genre(derived_genre, library_ids)
                 add_tracks(genre_tracks[:MAX_CANDIDATE_TRACKS])
             except Exception as e:
-                logger.warning(f"⚠️ Radio: genre fallback failed: {e}")
+                reason = describe_exception(e)
+                logger.warning(f"⚠️ Radio: genre fallback failed: {reason}")
+                self.pool_warnings.append(f"The genre fallback failed ({reason}).")
 
         logger.info(
             f"📻 Radio: assembled {len(candidates)} candidate tracks "

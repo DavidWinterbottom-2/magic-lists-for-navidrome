@@ -2,9 +2,25 @@ import httpx
 import os
 from typing import List, Dict, Any, Union, Optional
 
+from .errors import describe_exception
+
+# httpx defaults to a 5s timeout on everything, which is far too tight for
+# Navidrome's heavier endpoints — getSimilarSongs2 does Last.fm lookups and real
+# database work, and the whole server slows down while a library scan is running
+# (i.e. exactly after you've added the albums you want a station to pick up).
+#
+# Too short a timeout doesn't just make a request fail: the Radio pool degrades
+# silently, because a failed similar-songs lookup is caught and the station is
+# rebuilt from a much thinner fallback. Overridable for slow setups.
+DEFAULT_TIMEOUT = httpx.Timeout(
+    float(os.getenv("NAVIDROME_TIMEOUT", "30")),
+    connect=10.0
+)
+
+
 class NavidromeClient:
     """Simple client for interacting with Navidrome Subsonic API"""
-    
+
     def __init__(self):
         self.base_url = os.getenv("NAVIDROME_URL")
         if not self.base_url:
@@ -12,7 +28,7 @@ class NavidromeClient:
         self.api_key = os.getenv("NAVIDROME_API_KEY")
         self.username = os.getenv("NAVIDROME_USERNAME")
         self.password = os.getenv("NAVIDROME_PASSWORD")
-        self.client = httpx.AsyncClient()
+        self.client = httpx.AsyncClient(timeout=DEFAULT_TIMEOUT)
         self._auth_token = None
         self._subsonic_token = None
         self._subsonic_salt = None
@@ -41,7 +57,7 @@ class NavidromeClient:
                     raise Exception("No Subsonic credentials received from login response")
                     
             except httpx.RequestError as e:
-                raise Exception(f"Network error during login: {e}")
+                raise Exception(f"Network error during login: {describe_exception(e)}")
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 401:
                     raise Exception("Invalid username or password")
@@ -218,7 +234,7 @@ class NavidromeClient:
 
         except httpx.RequestError as e:
             print(f"🌐 Network error in getArtists: {e}")
-            raise Exception(f"Network error connecting to Navidrome: {e}")
+            raise Exception(f"Network error connecting to Navidrome: {describe_exception(e)}")
         except httpx.HTTPStatusError as e:
             print(f"🚨 HTTP error in getArtists: {e.response.status_code} - {e.response.text}")
             raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
@@ -350,7 +366,7 @@ class NavidromeClient:
             return tracks_list
                 
         except httpx.RequestError as e:
-            raise Exception(f"Network error connecting to Navidrome: {e}")
+            raise Exception(f"Network error connecting to Navidrome: {describe_exception(e)}")
         except httpx.HTTPStatusError as e:
             raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
         except Exception as e:
@@ -451,7 +467,7 @@ class NavidromeClient:
             return all_tracks
 
         except httpx.RequestError as e:
-            raise Exception(f"Network error connecting to Navidrome: {e}")
+            raise Exception(f"Network error connecting to Navidrome: {describe_exception(e)}")
         except httpx.HTTPStatusError as e:
             raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
         except Exception as e:
@@ -672,7 +688,7 @@ class NavidromeClient:
             return genres
 
         except httpx.RequestError as e:
-            raise Exception(f"Network error connecting to Navidrome: {e}")
+            raise Exception(f"Network error connecting to Navidrome: {describe_exception(e)}")
         except httpx.HTTPStatusError as e:
             raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
         except Exception as e:
@@ -758,7 +774,7 @@ class NavidromeClient:
             return tracks
 
         except httpx.RequestError as e:
-            raise Exception(f"Network error connecting to Navidrome: {e}")
+            raise Exception(f"Network error connecting to Navidrome: {describe_exception(e)}")
         except httpx.HTTPStatusError as e:
             raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
         except Exception as e:
@@ -814,7 +830,7 @@ class NavidromeClient:
             return genre_stats
 
         except httpx.RequestError as e:
-            raise Exception(f"Network error connecting to Navidrome: {e}")
+            raise Exception(f"Network error connecting to Navidrome: {describe_exception(e)}")
         except httpx.HTTPStatusError as e:
             raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
         except Exception as e:
@@ -864,7 +880,7 @@ class NavidromeClient:
             }
 
         except httpx.RequestError as e:
-            raise Exception(f"Network error connecting to Navidrome: {e}")
+            raise Exception(f"Network error connecting to Navidrome: {describe_exception(e)}")
         except httpx.HTTPStatusError as e:
             raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
         except Exception as e:
@@ -924,7 +940,7 @@ class NavidromeClient:
             return results
 
         except httpx.RequestError as e:
-            raise Exception(f"Network error connecting to Navidrome: {e}")
+            raise Exception(f"Network error connecting to Navidrome: {describe_exception(e)}")
         except httpx.HTTPStatusError as e:
             raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
         except Exception as e:
@@ -985,7 +1001,7 @@ class NavidromeClient:
             return results
 
         except httpx.RequestError as e:
-            raise Exception(f"Network error connecting to Navidrome: {e}")
+            raise Exception(f"Network error connecting to Navidrome: {describe_exception(e)}")
         except httpx.HTTPStatusError as e:
             raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
         except Exception as e:
@@ -1056,7 +1072,7 @@ class NavidromeClient:
             return tracks
 
         except httpx.RequestError as e:
-            raise Exception(f"Network error connecting to Navidrome: {e}")
+            raise Exception(f"Network error connecting to Navidrome: {describe_exception(e)}")
         except httpx.HTTPStatusError as e:
             raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
         except Exception as e:
@@ -1150,7 +1166,7 @@ class NavidromeClient:
             return playlist_id
                 
         except httpx.RequestError as e:
-            raise Exception(f"Network error connecting to Navidrome: {e}")
+            raise Exception(f"Network error connecting to Navidrome: {describe_exception(e)}")
         except httpx.HTTPStatusError as e:
             raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
         except Exception as e:
@@ -1249,7 +1265,7 @@ class NavidromeClient:
             return True
                 
         except httpx.RequestError as e:
-            raise Exception(f"Network error connecting to Navidrome: {e}")
+            raise Exception(f"Network error connecting to Navidrome: {describe_exception(e)}")
         except httpx.HTTPStatusError as e:
             raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
         except Exception as e:
@@ -1298,7 +1314,7 @@ class NavidromeClient:
                 
         except httpx.RequestError as e:
             print(f"🌐 Network error deleting playlist: {e}")
-            raise Exception(f"Network error connecting to Navidrome: {e}")
+            raise Exception(f"Network error connecting to Navidrome: {describe_exception(e)}")
         except httpx.HTTPStatusError as e:
             print(f"🚨 HTTP error deleting playlist: {e.response.status_code} - {e.response.text}")
             raise Exception(f"HTTP error from Navidrome: {e.response.status_code} - {e.response.text}")
@@ -1339,7 +1355,7 @@ class NavidromeClient:
             return count
                 
         except httpx.RequestError as e:
-            raise Exception(f"Network error connecting to Navidrome: {e}")
+            raise Exception(f"Network error connecting to Navidrome: {describe_exception(e)}")
         except httpx.HTTPStatusError as e:
             raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
         except Exception as e:
