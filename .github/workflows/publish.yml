@@ -29,6 +29,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The deployment target is a Raspberry Pi, so the image has to carry an
+      # arm64 variant — an amd64-only manifest fails on the host with
+      # "no matching manifest for linux/arm64/v8". GitHub's runners are amd64,
+      # so arm64 is cross-built under QEMU emulation.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       - uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
@@ -55,6 +63,11 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
+          # amd64 for dev machines, arm64 for the Pi this actually runs on.
+          # The arm64 leg is emulated, so it's the slow half of the build; the
+          # Python deps all ship aarch64 wheels, so nothing is compiled from
+          # source under emulation.
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # Cache through the registry so a rebuild doesn't reinstall every
