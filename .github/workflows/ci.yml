@@ -1,0 +1,38 @@
+name: ci
+
+# Adapted from the devcontainer-sandbox template's ci.yml. The template assumes a
+# packaged project (pip install -e .[dev], ruff config, pytest+coverage); this repo
+# currently ships runtime deps via requirements.txt and stdlib unittest tests, so
+# the jobs are wired to that reality. Tighten toward the template (ruff config +
+# pytest --cov-fail-under) once the repo grows a pyproject.toml.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  # Catch real breakage (syntax errors, undefined names) on every change. This is
+  # the "hard errors" subset of ruff, not a style gate — the repo has no ruff
+  # config yet, so a full `ruff check` would drown the signal in legacy noise.
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - run: ruff check --select=E9,F63,F7,F82 .
+      - run: python -m compileall backend tests
+
+  # Run the test suite (stdlib unittest — no pytest/coverage config in the repo yet).
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -p 'test_*.py' -v

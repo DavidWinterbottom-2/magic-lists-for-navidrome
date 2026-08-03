@@ -1,0 +1,147 @@
+/* =========================================================================
+   Magic Lists — app-local layer over the winterbottom design system.
+
+   Load order: winterbottom.css (tokens) → Tailwind CDN → this file.
+
+   The UI is built from Tailwind utility classes, so the bulk of the theming is
+   done by remapping Tailwind's palette onto the design tokens in the
+   `tailwind.config` block in index.html — that way `text-gray-500` etc. already
+   resolve to `var(--ink-2)` and follow the light/dark toggle for free.
+
+   What's left here is the handful of cases a palette remap can't express: a
+   utility that means something different depending on where it's used, and the
+   components the design system styles but Tailwind doesn't know about.
+
+   `!important` is used deliberately: the Tailwind Play CDN injects its
+   generated stylesheet into <head> at runtime, which can land after this file
+   in the cascade. Specificity, not source order, is what reliably wins.
+
+   Never edit winterbottom.css to change something here — the next sync from
+   docker-infra/design-system would clobber it (REPO-STANDARDS §8).
+   ========================================================================= */
+
+/* ---- Page canvas -------------------------------------------------------- */
+body {
+    /* The inline <style> in index.html pins Inter; keep it, but let the design
+       system's stack supply the fallbacks and the mono/serif companions. */
+    background: var(--bg);
+    color: var(--ink);
+}
+
+/* ---- Primary call-to-action --------------------------------------------
+   The app draws its main buttons as `bg-gray-900 text-white`. Remapping
+   gray-900 to an ink token would make them merely dark; the design system's
+   primary action is the amber accent, so promote them here instead. */
+.bg-gray-900,
+.bg-gray-800 {
+    background-color: var(--accent) !important;
+    color: var(--accent-ink) !important;
+    border-color: transparent !important;
+}
+.bg-gray-900:hover,
+.bg-gray-800:hover,
+.hover\:bg-gray-700:hover,
+.hover\:bg-gray-800:hover {
+    background-color: var(--accent-hover) !important;
+    color: var(--accent-ink) !important;
+}
+.bg-gray-900 *,
+.bg-gray-800 * {
+    color: inherit !important;
+}
+.bg-gray-900:disabled,
+.bg-gray-800:disabled {
+    opacity: .55;
+    cursor: not-allowed;
+}
+
+/* ---- Surfaces ----------------------------------------------------------- */
+/* Cards and panels sit on --surface; the page and sidebar sit on --bg. */
+.bg-white {
+    background-color: var(--surface) !important;
+}
+.shadow-lg,
+.shadow-md {
+    box-shadow: var(--shadow) !important;
+}
+.shadow,
+.shadow-sm,
+.shadow-2xs {
+    box-shadow: var(--shadow-sm) !important;
+}
+
+/* ---- Focus -------------------------------------------------------------- */
+/* Tailwind's blue focus rings are remapped to the accent in the config, but the
+   ring utilities also need the offset colour to follow the surface. */
+*:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+}
+
+/* ---- Section eyebrows ---------------------------------------------------
+   The sidebar's "CREATE" / "MANAGE" headings are the design system's signature
+   uppercase monospace label. */
+#desktopSidebar .uppercase,
+#mobileSidebar .uppercase {
+    font-family: var(--font-mono);
+    letter-spacing: .1em;
+    color: var(--ink-3);
+}
+
+/* ---- Track lists in Manage Playlists ------------------------------------ */
+details > summary {
+    color: var(--accent);
+    list-style: none;
+}
+details > summary::-webkit-details-marker {
+    display: none;
+}
+details > summary::before {
+    content: "▸";
+    display: inline-block;
+    margin-right: .4em;
+    transition: transform .12s ease;
+}
+details[open] > summary::before {
+    transform: rotate(90deg);
+}
+details > summary:hover {
+    color: var(--accent-hover);
+}
+/* Track numbers are data — give them the system's tabular monospace. */
+details ol {
+    font-variant-numeric: tabular-nums;
+}
+details ol li::marker {
+    font-family: var(--font-mono);
+    color: var(--ink-3);
+}
+
+/* ---- Theme toggle in the header ----------------------------------------- */
+#theme-toggle {
+    display: inline-grid;
+    place-items: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    background: var(--surface);
+    color: var(--ink-2);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+}
+#theme-toggle:hover {
+    color: var(--ink);
+    border-color: var(--ink-3);
+}
+
+/* The logo is a dark wordmark; invert it so it stays legible on a dark canvas. */
+:root[data-theme="dark"] .ml-logo {
+    filter: invert(1) hue-rotate(180deg);
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .ml-logo {
+        filter: invert(1) hue-rotate(180deg);
+    }
+}

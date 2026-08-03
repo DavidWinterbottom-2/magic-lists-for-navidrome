@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 
 class Artist(BaseModel):
@@ -25,12 +25,40 @@ class CreateGenrePlaylistRequest(BaseModel):
     playlist_length: int = 25  # Number of tracks to include
     library_ids: List[str] = []  # List of library IDs to filter tracks
 
+class CreateRadioPlaylistRequest(BaseModel):
+    """Request schema for creating a Radio playlist seeded from an artist or song"""
+    seed_type: str = "artist"  # "artist" or "song"
+    seed_id: str  # Navidrome artist ID or song ID depending on seed_type
+    playlist_name: Optional[str] = None  # Optional, auto-generated if not provided
+    refresh_frequency: str = "none"  # "none", "daily", "weekly", "monthly"
+    playlist_length: int = 25  # Number of tracks to include
+    library_ids: List[str] = []  # List of library IDs to filter tracks
+
+class AlbumSuggestion(BaseModel):
+    """Schema for a suggested album not currently in the library"""
+    artist: str
+    album: str
+    year: Optional[int] = None
+    reason: Optional[str] = None
+
+class PlaylistTrack(BaseModel):
+    """A track as stored on a playlist.
+
+    Artist and album default to empty so playlists written before tracks
+    carried them still validate — see `normalise_stored_songs` in main.py.
+    """
+    title: str
+    artist: str = ""
+    album: str = ""
+
+
 class Playlist(BaseModel):
     """Schema for a stored playlist"""
     id: int
     artist_id: str
     playlist_name: str
-    songs: List[str] = []
+    # Rows written before tracks carried artist/album hold bare title strings.
+    songs: List[Union[PlaylistTrack, str]] = []
     reasoning: Optional[str] = None
     navidrome_playlist_id: Optional[str] = None
     library_ids: List[str] = []
@@ -100,7 +128,7 @@ class PlaylistWithScheduleInfo(BaseModel):
     id: int
     artist_id: str
     playlist_name: str
-    songs: List[str]
+    songs: List[Union[PlaylistTrack, str]]
     created_at: str
     updated_at: str
     navidrome_playlist_id: Optional[str] = None

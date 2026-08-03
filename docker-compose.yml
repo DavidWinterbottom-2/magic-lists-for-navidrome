@@ -5,7 +5,7 @@ services:
       dockerfile: Dockerfile
     container_name: magiclists
     ports:
-      - "4545:8000"
+      - "4545:4545"
     env_file:
       - .env
     environment:

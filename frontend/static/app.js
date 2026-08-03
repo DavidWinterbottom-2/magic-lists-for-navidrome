@@ -5,6 +5,12 @@ let allArtists = [];
 let allGenres = [];
 let currentToast = null;
 
+// Global state for Radio seed selection
+let radioSeedType = 'artist';        // 'artist' or 'song'
+let selectedRadioArtistId = null;
+let selectedRadioSongId = null;
+let selectedRadioSongLabel = null;
+
 // Global state for library selection
 let selectedLibraryIds = [];
 let allLibraries = [];
@@ -187,7 +193,7 @@ function setActiveMenuItem(page) {
 // Navigation functionality
 function showContent(contentId) {
     // Hide all content sections
-    const contentSections = ['welcome-content', 'this-is-content', 'rediscover-content', 'genre-mix-content', 'manage-playlists-content', 'system-check-content', 'terms-content'];
+    const contentSections = ['welcome-content', 'this-is-content', 'rediscover-content', 'genre-mix-content', 'radio-content', 'manage-playlists-content', 'system-check-content', 'terms-content'];
     contentSections.forEach(id => {
         const element = document.getElementById(id);
         if (element) {
@@ -736,6 +742,8 @@ function handleLibraryCheckboxChange(e) {
         loadArtists();
     } else if (currentPage === 'genre-mix') {
         loadGenres();
+    } else if (currentPage === 'radio') {
+        loadRadioArtists();
     }
 
     console.log(`📚 Library selection updated:`, selectedLibraryIds);
@@ -784,6 +792,37 @@ document.getElementById('genre-mix-form').addEventListener('submit', function(e)
     e.preventDefault();
     createGenrePlaylist();
 });
+
+// Radio form submission and controls
+const radioForm = document.getElementById('radio-form');
+if (radioForm) {
+    radioForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        createRadioPlaylist();
+    });
+
+    // Seed type toggle
+    document.querySelectorAll('input[name="radio-seed-type"]').forEach(input => {
+        input.addEventListener('change', function(e) {
+            setRadioSeedType(e.target.value);
+        });
+    });
+
+    // Song search controls
+    const songSearchBtn = document.getElementById('radio-song-search-btn');
+    const songSearchInput = document.getElementById('radio-song-search');
+    const songClearBtn = document.getElementById('radio-song-clear');
+    if (songSearchBtn) songSearchBtn.addEventListener('click', searchRadioSongs);
+    if (songSearchInput) {
+        songSearchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                searchRadioSongs();
+            }
+        });
+    }
+    if (songClearBtn) songClearBtn.addEventListener('click', clearRadioSong);
+}
 
 async function createArtistPlaylist() {
     const submitBtn = document.getElementById('create-artist-playlist-btn');
@@ -914,6 +953,287 @@ async function createGenrePlaylist() {
     } finally {
         submitBtn.disabled = false;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Radio functionality
+// ---------------------------------------------------------------------------
+
+// Load artists into the Radio artist selector (separate element from "This Is")
+async function loadRadioArtists() {
+    try {
+        let url = '/api/artists';
+        if (selectedLibraryIds.length > 0) {
+            const libraryIdsParam = selectedLibraryIds.map(id => `library_id=${encodeURIComponent(id)}`).join('&');
+            url = `/api/artists?${libraryIdsParam}`;
+        }
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error('Failed to fetch artists');
+        }
+        // Reuse the shared allArtists cache
+        allArtists = await response.json();
+        selectedRadioArtistId = null;
+
+        const radioArtistSelect = document.getElementById('radio-artist-select');
+        if (radioArtistSelect) {
+            while (radioArtistSelect.options.length > 1) {
+                radioArtistSelect.remove(1);
+            }
+            allArtists.forEach(artist => {
+                const option = document.createElement('option');
+                option.value = artist.id;
+                option.textContent = artist.name;
+                radioArtistSelect.appendChild(option);
+            });
+
+            // (Re)attach change handler and reinitialise the HSSelect component
+            radioArtistSelect.removeEventListener('change', handleRadioArtistSelection);
+            radioArtistSelect.addEventListener('change', handleRadioArtistSelection);
+
+            if (window.HSSelect) {
+                const selectInstance = window.HSSelect.getInstance(radioArtistSelect);
+                if (selectInstance) {
+                    selectInstance.destroy();
+                }
+                window.HSSelect.autoInit();
+            }
+        }
+    } catch (error) {
+        console.error('Error loading radio artists:', error);
+        showToast('error', 'Failed to load artists from your library');
+    }
+}
+
+function handleRadioArtistSelection(e) {
+    selectedRadioArtistId = e.target.value || null;
+}
+
+// Toggle between artist and song seed inputs
+function setRadioSeedType(type) {
+    radioSeedType = type;
+    const artistSeed = document.getElementById('radio-artist-seed');
+    const songSeed = document.getElementById('radio-song-seed');
+    if (artistSeed) artistSeed.classList.toggle('hidden', type !== 'artist');
+    if (songSeed) songSeed.classList.toggle('hidden', type !== 'song');
+}
+
+// Search the library for songs to seed a station
+async function searchRadioSongs() {
+    const input = document.getElementById('radio-song-search');
+    const resultsContainer = document.getElementById('radio-song-results');
+    const query = input ? input.value.trim() : '';
+
+    if (!query) {
+        showToast('warning', 'Enter a song or artist to search');
+        return;
+    }
+    if (!checkLibrarySelection()) {
+        return;
+    }
+
+    resultsContainer.innerHTML = '<p class="text-sm text-gray-500 px-1 py-2">Searching...</p>';
+
+    try {
+        let url = `/api/songs?q=${encodeURIComponent(query)}`;
+        if (selectedLibraryIds.length > 0) {
+            url += '&' + selectedLibraryIds.map(id => `library_id=${encodeURIComponent(id)}`).join('&');
+        }
+        const response = await fetch(url);
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+            throw new Error(errorData.detail || 'Failed to search songs');
+        }
+        const songs = await response.json();
+
+        if (!songs.length) {
+            resultsContainer.innerHTML = '<p class="text-sm text-gray-500 px-1 py-2">No matching songs found.</p>';
+            return;
+        }
+
+        resultsContainer.innerHTML = songs.map(song => {
+            const label = `${song.title} — ${song.artist || 'Unknown'}`;
+            const safeLabel = label.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            return `
+                <button type="button"
+                        class="w-full text-left p-2 text-sm text-gray-800 border border-gray-200 rounded-lg hover:bg-gray-100"
+                        onclick="selectRadioSong('${song.id}', '${safeLabel}')">
+                    <span class="font-medium">${song.title}</span>
+                    <span class="text-gray-500"> — ${song.artist || 'Unknown'}${song.album ? ' · ' + song.album : ''}</span>
+                </button>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('Error searching songs:', error);
+        resultsContainer.innerHTML = `<p class="text-sm text-red-600 px-1 py-2">${error.message}</p>`;
+    }
+}
+
+function selectRadioSong(songId, label) {
+    selectedRadioSongId = songId;
+    selectedRadioSongLabel = label;
+
+    const resultsContainer = document.getElementById('radio-song-results');
+    const selectedDiv = document.getElementById('radio-song-selected');
+    const selectedLabel = document.getElementById('radio-song-selected-label');
+
+    if (resultsContainer) resultsContainer.innerHTML = '';
+    if (selectedLabel) selectedLabel.textContent = label;
+    if (selectedDiv) selectedDiv.classList.remove('hidden');
+}
+
+function clearRadioSong() {
+    selectedRadioSongId = null;
+    selectedRadioSongLabel = null;
+    const selectedDiv = document.getElementById('radio-song-selected');
+    const input = document.getElementById('radio-song-search');
+    if (selectedDiv) selectedDiv.classList.add('hidden');
+    if (input) input.value = '';
+}
+
+async function createRadioPlaylist() {
+    const submitBtn = document.getElementById('create-radio-playlist-btn');
+
+    // Determine seed
+    let seedType = radioSeedType;
+    let seedId;
+    if (seedType === 'song') {
+        if (!selectedRadioSongId) {
+            showToast('error', 'Please search for and select a song first');
+            return;
+        }
+        seedId = selectedRadioSongId;
+    } else {
+        if (!selectedRadioArtistId) {
+            showToast('error', 'Please select an artist first');
+            return;
+        }
+        seedId = selectedRadioArtistId;
+    }
+
+    if (!checkLibrarySelection()) {
+        return;
+    }
+
+    // Hide any previous results
+    const resultsPanel = document.getElementById('radio-results');
+    if (resultsPanel) resultsPanel.classList.add('hidden');
+
+    showToast('loading', 'Building your station...', 0);
+    submitBtn.disabled = true;
+
+    try {
+        const refreshFrequency = document.querySelector('input[name="radio-refresh-frequency"]:checked').value;
+        const playlistLength = document.querySelector('input[name="radio-playlist-length"]:checked').value;
+
+        const response = await fetch('/api/create_radio_playlist', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                seed_type: seedType,
+                seed_id: seedId,
+                refresh_frequency: refreshFrequency,
+                playlist_length: parseInt(playlistLength),
+                library_ids: selectedLibraryIds
+            })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
+            throw new Error(errorData.detail || 'Failed to create radio station');
+        }
+
+        const data = await response.json();
+
+        // Track successful radio station creation with Rybbit
+        if (typeof window.rybbit !== 'undefined') {
+            const modelInfo = await getAIModelInfo();
+            window.rybbit.event('Radio Playlist Created', {
+                trackCount: data.track_count || (data.songs ? data.songs.length : 0),
+                seedType: seedType,
+                refreshFrequency: refreshFrequency,
+                albumSuggestions: (data.album_suggestions || []).length,
+                aiModel: modelInfo.model,
+                aiProvider: modelInfo.provider
+            });
+        }
+
+        const trackCount = data.track_count || (data.songs ? data.songs.length : 0);
+        showToast('success', `Station "${data.seed_name || ''}" created with ${trackCount} tracks`);
+
+        renderRadioResults(data);
+        updatePlaylistCount();
+
+    } catch (error) {
+        console.error('Error creating radio station:', error);
+        showToast('error', error.message);
+    } finally {
+        submitBtn.disabled = false;
+    }
+}
+
+// Track and album names come from the library/AI and are interpolated into
+// innerHTML below, so they must be escaped rather than trusted.
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[ch]);
+}
+
+function renderRadioResults(data) {
+    const resultsPanel = document.getElementById('radio-results');
+    const reasoningDiv = document.getElementById('radio-reasoning');
+    const shortfallDiv = document.getElementById('radio-shortfall');
+    const suggestionsDiv = document.getElementById('radio-album-suggestions');
+    if (!resultsPanel || !suggestionsDiv) return;
+
+    reasoningDiv.textContent = data.reasoning || '';
+
+    // Say so when a thin library couldn't fill the requested station length
+    const shortfall = data.shortfall;
+    if (shortfallDiv) {
+        if (shortfall && shortfall.is_short) {
+            shortfallDiv.innerHTML = `
+                <div class="p-3 border border-amber-200 bg-amber-50 rounded-lg">
+                    <p class="text-sm font-semibold text-amber-900 mb-0">
+                        ${shortfall.delivered} of ${shortfall.requested} tracks
+                    </p>
+                    <p class="text-sm text-amber-800 mb-0">${escapeHtml(shortfall.message)}</p>
+                </div>
+            `;
+            shortfallDiv.classList.remove('hidden');
+        } else {
+            shortfallDiv.innerHTML = '';
+            shortfallDiv.classList.add('hidden');
+        }
+    }
+
+    const suggestions = data.album_suggestions || [];
+    if (!suggestions.length) {
+        suggestionsDiv.innerHTML = '<p class="text-sm text-gray-500">No album suggestions were returned. Configure an AI provider to get recommendations.</p>';
+    } else {
+        suggestionsDiv.innerHTML = suggestions.map(s => {
+            const title = `${escapeHtml(s.album)}${s.year ? ` <span class="font-normal text-gray-500">(${escapeHtml(s.year)})</span>` : ''}`;
+            // With Lidarr configured, the title opens its "Add New" search prefilled
+            const heading = s.lidarr_url
+                ? `<a href="${escapeHtml(s.lidarr_url)}" target="_blank" rel="noopener noreferrer"
+                      class="text-sm font-semibold text-gray-900 underline hover:text-gray-600">${title}</a>`
+                : `<span class="text-sm font-semibold text-gray-900">${title}</span>`;
+            return `
+                <div class="p-3 border border-gray-200 rounded-lg">
+                    <p class="mb-0">${heading}</p>
+                    <p class="text-sm text-gray-600 mb-0">${escapeHtml(s.artist)}</p>
+                    ${s.reason ? `<p class="text-sm text-gray-500 italic mt-1 mb-0">${escapeHtml(s.reason)}</p>` : ''}
+                    ${s.lidarr_url ? `<a href="${escapeHtml(s.lidarr_url)}" target="_blank" rel="noopener noreferrer"
+                        class="inline-block text-sm font-medium text-gray-900 underline mt-2">Add in Lidarr</a>` : ''}
+                </div>
+            `;
+        }).join('');
+    }
+
+    resultsPanel.classList.remove('hidden');
 }
 
 // Re-discover Weekly functionality
@@ -1097,26 +1417,54 @@ function renderPlaylists(playlists) {
     const container = document.getElementById('playlists-container');
     
     container.innerHTML = playlists.map(playlist => {
+        // The API already returns the track titles; show them behind a disclosure
+        // so a 50-track station doesn't bury the rest of the list.
+        const songs = Array.isArray(playlist.songs) ? playlist.songs : [];
+        const trackList = songs.length ? `
+            <details class="mt-3">
+                <summary class="text-sm font-medium text-gray-900 cursor-pointer">
+                    Show ${songs.length} track${songs.length === 1 ? '' : 's'}
+                </summary>
+                <ol class="text-sm text-gray-600 mt-2 mb-0 pl-5 list-decimal space-y-1">
+                    ${songs.map(song => {
+                        // Playlists created before tracks carried artist/album come
+                        // back with those fields empty — show just the title there.
+                        const artist = song.artist ? escapeHtml(song.artist) : '';
+                        const album = song.album ? escapeHtml(song.album) : '';
+                        const detail = [artist, album].filter(Boolean).join(' • ');
+                        return `
+                            <li>
+                                <span class="text-gray-900">${escapeHtml(song.title)}</span>
+                                ${detail ? `<span class="text-gray-500"> — ${detail}</span>` : ''}
+                            </li>
+                        `;
+                    }).join('')}
+                </ol>
+            </details>
+        ` : '';
+
         return `
             <div class="flex items-start justify-between p-4 border border-gray-200 rounded-lg mb-4">
                 <div class="flex-grow">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-1">${playlist.playlist_name}</h3>
+                    <h3 class="text-lg font-semibold text-gray-900 mb-1">${escapeHtml(playlist.playlist_name)}</h3>
                     <div class="text-sm text-gray-600 mb-2 space-y-1">
                         <p class="mb-0">
-                            ${playlist.track_count || 0} tracks • 
-                            Refreshes ${playlist.refresh_frequency || 'manually'} • 
+                            ${playlist.track_count || 0} tracks •
+                            Refreshes ${playlist.refresh_frequency || 'manually'} •
                             ${playlist.next_refresh ? `Next refresh ${formatNextRefresh(playlist.next_refresh)}` : 'No scheduled refresh'}
                         </p>
                         <p class="mb-0">
-                            Created ${formatFriendlyDate(playlist.created_at)} • 
+                            Created ${formatFriendlyDate(playlist.created_at)} •
                             ${playlist.last_refreshed ? `Refreshed ${formatFriendlyDate(playlist.last_refreshed)}` : 'Not refreshed yet'}
                         </p>
                     </div>
-                    ${playlist.reasoning ? `<p class="text-sm text-gray-600 m-0 mt-2 italic">${truncateText(playlist.reasoning, 140)}</p>` : ''}
+                    ${playlist.reasoning ? `<p class="text-sm text-gray-600 m-0 mt-2 italic">${escapeHtml(truncateText(playlist.reasoning, 140))}</p>` : ''}
+                    ${trackList}
                 </div>
                 <div class="flex-none">
                     <button
-                        onclick="deletePlaylist(${playlist.id}, '${playlist.playlist_name}')"
+                        data-playlist-name="${escapeHtml(playlist.playlist_name)}"
+                        onclick="deletePlaylist(${playlist.id}, this.dataset.playlistName)"
                         class="text-sm font-medium underline cursor-pointer border-none bg-transparent text-red-600 hover:text-red-800 px-2 py-1"
                     >
                         Delete
@@ -1374,6 +1722,9 @@ function updateURL(page) {
         case 'genre-mix':
             url = '/genre-mix';
             break;
+        case 'radio':
+            url = '/radio';
+            break;
         case 'playlists':
             url = '/playlists';
             break;
@@ -1436,6 +1787,9 @@ function getPageFromURL(pathname) {
         case '/genre-mix':
             page = 'genre-mix';
             break;
+        case '/radio':
+            page = 'radio';
+            break;
         case '/playlists':
             page = 'playlists';
             break;
@@ -1477,6 +1831,12 @@ function handlePageNavigation(page) {
         if (selectedLibraryIds.length > 0) {
             setTimeout(() => loadGenres(), 100);
         }
+    } else if (page === 'radio') {
+        contentId = 'radio-content';
+        // Load artists for the Radio seed selector (only if libraries selected)
+        if (selectedLibraryIds.length > 0) {
+            setTimeout(() => loadRadioArtists(), 100);
+        }
     } else if (page === 'playlists') {
         contentId = 'manage-playlists-content';
         // Load playlists when navigating to manage page
@@ -1494,3 +1854,13 @@ function handlePageNavigation(page) {
 }
 
 
+
+// Register the service worker so the app is installable and has an offline
+// fallback. Served from / (not /static) so its scope covers the whole SPA.
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(error => {
+            console.warn('Service worker registration failed:', error);
+        });
+    });
+}

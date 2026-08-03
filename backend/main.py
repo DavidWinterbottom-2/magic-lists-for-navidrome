@@ -45,9 +45,13 @@ logging.getLogger('httpcore').setLevel(logging.WARNING)
 from .navidrome_client import NavidromeClient
 from .ai_client import AIClient
 from .database import DatabaseManager, get_db
-from .schemas import CreatePlaylistRequest, CreateGenrePlaylistRequest, Playlist, RediscoverWeeklyResponse, RediscoverWeeklyV2Response, CreateRediscoverPlaylistRequest, PlaylistWithScheduleInfo
+from .schemas import CreatePlaylistRequest, CreateGenrePlaylistRequest, CreateRadioPlaylistRequest, Playlist, RediscoverWeeklyResponse, RediscoverWeeklyV2Response, CreateRediscoverPlaylistRequest, PlaylistWithScheduleInfo
 from .recipe_manager import recipe_manager
 from .rediscover import RediscoverWeekly, ReDiscoverV2Processor
+from .radio import (
+    RadioProcessor, build_shortfall, cap_seed_artist, count_distinct_artists,
+    lidarr_add_url, promote_seed_first
+)
 from .track_scoring import filter_tracks_for_this_is_playlist
 # SYSTEM CHECK FEATURE - START
 from .services.health_check_service import HealthCheckService
@@ -126,10 +130,135 @@ async def shutdown_event():
         scheduler_logger.info("🛑 Scheduler shutdown completed")
 
 # Mount static files
-app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
+class RevalidatingStaticFiles(StaticFiles):
+    """Serve static assets with `Cache-Control: no-cache`.
+
+    Starlette already sends ETag/Last-Modified, but without Cache-Control a
+    browser is free to reuse a cached copy without revalidating. That means a
+    changed app.js can keep serving stale while index.html renders fresh, which
+    silently breaks the SPA (an unknown page id hides every content panel).
+
+    "no-cache" does not disable caching - it requires revalidation, so unchanged
+    files still come back as a cheap 304.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", RevalidatingStaticFiles(directory="frontend/static"), name="static")
+
+
+# A service worker may only control URLs at or below its own path, so the app
+# shell's worker has to be served from the root rather than from /static.
+# The manifest sits alongside it for the same reason (its scope is "/").
+@app.get("/sw.js", include_in_schema=False)
+async def service_worker():
+    from fastapi.responses import FileResponse
+    return FileResponse(
+        "frontend/static/sw.js",
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"}
+    )
+
+
+@app.get("/manifest.webmanifest", include_in_schema=False)
+async def web_manifest():
+    from fastapi.responses import FileResponse
+    return FileResponse(
+        "frontend/static/manifest.webmanifest",
+        media_type="application/manifest+json",
+        headers={"Cache-Control": "no-cache"}
+    )
+
 
 # Templates
 templates = Jinja2Templates(directory="frontend/templates")
+
+
+def static_version() -> str:
+    """Cache-busting token for /static/app.js, derived from its mtime.
+
+    The template used to hardcode "?v=1.0.0", so the URL never changed and
+    browsers kept serving a cached app.js after every deploy. Deriving the
+    token from the file means the URL changes whenever the file does.
+    """
+    try:
+        return str(int(os.path.getmtime("frontend/static/app.js")))
+    except OSError:
+        return "0"
+
+
+def render_index(request: Request) -> HTMLResponse:
+    """Render the SPA shell with a cache-busting version for its assets"""
+    return templates.TemplateResponse(
+        request, "index.html", {"static_version": static_version()}
+    )
+
+
+def summarise_track(track: dict) -> dict:
+    """Reduce a track to what Manage Playlists needs to display it.
+
+    Playlists used to store a bare list of title strings, which left the UI
+    unable to tell two songs of the same name apart or show what album a track
+    came from. Storing the artist and album alongside costs a few bytes per
+    track and avoids re-querying Navidrome to render the list.
+    """
+    return {
+        "title": track.get("title") or "Unknown",
+        "artist": track.get("artist") or "",
+        "album": track.get("album") or "",
+    }
+
+
+def summarise_tracks(tracks: list, order: list = None) -> list:
+    """Summarise tracks for storage, optionally reordered to `order` (track ids).
+
+    `order` is the AI's curated sequence; tracks it referenced but that aren't
+    in `tracks` are skipped, matching the previous title-mapping behaviour.
+    """
+    if order is None:
+        return [summarise_track(track) for track in tracks]
+
+    by_id = {track["id"]: track for track in tracks}
+    return [summarise_track(by_id[tid]) for tid in order if tid in by_id]
+
+
+def normalise_stored_songs(songs) -> list:
+    """Present stored songs uniformly, whatever shape the row was written in.
+
+    Playlists created before tracks carried artist/album are plain strings, so
+    they are widened here rather than migrated — a stored title is all the
+    information those rows ever had, and re-deriving the rest would mean
+    refetching every playlist from Navidrome.
+    """
+    normalised = []
+    for song in songs or []:
+        if isinstance(song, dict):
+            normalised.append({
+                "title": song.get("title") or "Unknown",
+                "artist": song.get("artist") or "",
+                "album": song.get("album") or "",
+            })
+        else:
+            normalised.append({"title": str(song), "artist": "", "album": ""})
+    return normalised
+
+
+def song_labels(songs) -> list:
+    """Flat "Title — Artist" strings, for the refresh prompts' variety context.
+
+    Those prompts interpolate the previous tracklist so the model can avoid
+    repeating it. They used to join the stored title strings directly, which
+    breaks now that rows store dicts — and naming the artist makes the
+    constraint more useful to the model anyway.
+    """
+    labels = []
+    for song in normalise_stored_songs(songs):
+        labels.append(f"{song['title']} — {song['artist']}" if song["artist"] else song["title"])
+    return labels
 
 # Initialize clients (lazy loading)
 navidrome_client = None
@@ -166,13 +295,13 @@ async def read_root(request: Request):
         return RedirectResponse(url="/system-check", status_code=302)
     # SYSTEM CHECK FEATURE - END
     
-    return templates.TemplateResponse("index.html", {"request": request})
+    return render_index(request)
 
 # SYSTEM CHECK FEATURE - START
 @app.get("/system-check", response_class=HTMLResponse)
 async def system_check_page(request: Request):
     """Serve the system check page"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return render_index(request)
 # SYSTEM CHECK FEATURE - END
 
 @app.get("/api/artists")
@@ -208,6 +337,22 @@ async def get_genres(library_id: List[str] = Query(None)):
             raise HTTPException(status_code=503, detail=f"Cannot connect to Navidrome server: {error_msg}")
         else:
             raise HTTPException(status_code=500, detail=f"Failed to fetch genres: {error_msg}")
+
+@app.get("/api/songs")
+async def search_songs(q: str = Query(..., min_length=1), library_id: List[str] = Query(None)):
+    """Search for songs in Navidrome (used as a Radio seed)"""
+    try:
+        client = get_navidrome_client()
+        songs = await client.search_songs(q, count=25, library_ids=library_id)
+        return songs
+    except Exception as e:
+        error_msg = str(e)
+        if "Invalid username or password" in error_msg or "No authentication method available" in error_msg:
+            raise HTTPException(status_code=401, detail=error_msg)
+        elif "Network error" in error_msg or "connecting to Navidrome" in error_msg:
+            raise HTTPException(status_code=503, detail=f"Cannot connect to Navidrome server: {error_msg}")
+        else:
+            raise HTTPException(status_code=500, detail=f"Failed to search songs: {error_msg}")
 
 @app.get("/api/music-folders")
 async def get_music_folders():
@@ -368,18 +513,14 @@ async def create_playlist(
         
         # Get track titles for database storage - PRESERVE AI CURATION ORDER
         # Note: Use all_tracks for mapping since AI might reference tracks from full set
-        track_titles = []
-        track_id_to_title = {track["id"]: track["title"] for track in all_tracks}
-        for track_id in curated_track_ids:  # Iterate in AI-curated order
-            if track_id in track_id_to_title:
-                track_titles.append(track_id_to_title[track_id])
+        track_summaries = summarise_tracks(all_tracks, order=curated_track_ids)
         
         
         # Store playlist in local database (using the first artist_id for now)
         playlist = await db.create_playlist(
             artist_id=request.artist_ids[0],
             playlist_name=playlist_name,
-            songs=track_titles,
+            songs=track_summaries,
             reasoning=reasoning,
             navidrome_playlist_id=navidrome_playlist_id,
             playlist_length=request.playlist_length,
@@ -465,17 +606,13 @@ async def create_playlist_with_reasoning(
         )
         
         # Get track titles for database storage
-        track_titles = []
-        track_id_to_title = {track["id"]: track["title"] for track in tracks}
-        for track_id in curated_track_ids:
-            if track_id in track_id_to_title:
-                track_titles.append(track_id_to_title[track_id])
+        track_summaries = summarise_tracks(tracks, order=curated_track_ids)
         
         # Store playlist in local database
         playlist = await db.create_playlist(
             artist_id=first_artist_id,
             playlist_name=playlist_name,
-            songs=track_titles,
+            songs=track_summaries,
             navidrome_playlist_id=navidrome_playlist_id
         )
         
@@ -576,18 +713,14 @@ async def create_genre_playlist(
         )
 
         # Get track titles for database storage
-        track_titles = []
-        track_id_to_title = {track["id"]: track["title"] for track in all_tracks}
-        for track_id in curated_track_ids:  # Iterate in AI-curated order
-            if track_id in track_id_to_title:
-                track_titles.append(track_id_to_title[track_id])
+        track_summaries = summarise_tracks(all_tracks, order=curated_track_ids)
 
 
         # Store playlist in local database (using genre as identifier)
         playlist = await db.create_playlist(
             artist_id=request.genre,  # Using genre as artist_id for now
             playlist_name=playlist_name,
-            songs=track_titles,
+            songs=track_summaries,
             reasoning=reasoning,
             navidrome_playlist_id=navidrome_playlist_id,
             playlist_length=request.playlist_length,
@@ -612,6 +745,154 @@ async def create_genre_playlist(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create genre playlist: {str(e)}")
+
+@app.post("/api/create_radio_playlist")
+async def create_radio_playlist(
+    request: CreateRadioPlaylistRequest,
+    db: DatabaseManager = Depends(get_db)
+):
+    """Create an AI-curated 'Radio' playlist seeded from an artist or song.
+
+    Pools similar-style tracks from the library (seed artist + similar artists),
+    lets the AI curate by style/popularity/release date, and returns AI-suggested
+    albums by fitting artists that are NOT currently in the library.
+    """
+    try:
+        nav_client = get_navidrome_client()
+        ai_client_instance = get_ai_client()
+
+        if request.seed_type not in ("artist", "song"):
+            raise HTTPException(status_code=400, detail="seed_type must be 'artist' or 'song'")
+
+        # Resolve the seed and gather candidate tracks
+        processor = RadioProcessor(nav_client)
+        try:
+            seed = await processor.resolve_seed(request.seed_type, request.seed_id, request.library_ids)
+        except Exception as e:
+            if "not found" in str(e).lower():
+                raise HTTPException(status_code=404, detail=f"Radio seed not found: {e}")
+            raise
+
+        candidate_tracks = await processor.gather_candidate_tracks(seed, request.library_ids)
+        if not candidate_tracks:
+            raise HTTPException(status_code=404, detail="No candidate tracks found for this radio seed")
+
+        # Smart-filter to keep the LLM payload manageable (reuses engagement scoring)
+        library_stats = await nav_client.get_library_stats()
+        filtered_tracks, filter_metadata = filter_tracks_for_this_is_playlist(
+            source_tracks=candidate_tracks,
+            target_playlist_size=request.playlist_length,
+            library_stats=library_stats
+        )
+        if filter_metadata['filtered']:
+            scheduler_logger.info(f"🎯 Radio smart filtering: {filter_metadata['source_count']} → {filter_metadata['sent_count']} tracks")
+
+        # AI curation (returns tracks, reasoning, and album suggestions)
+        curated_track_ids, reasoning, album_suggestions = await ai_client_instance.curate_radio(
+            seed_name=seed["name"],
+            tracks_json=filtered_tracks,
+            num_tracks=request.playlist_length,
+            include_reasoning=True
+        )
+
+        if not curated_track_ids:
+            scheduler_logger.error(f"❌ Radio curation returned no tracks for {seed['name']}")
+            raise HTTPException(status_code=500, detail="AI curation failed to return any tracks")
+
+        playlist_name = request.playlist_name or f"{seed['name'] if seed['type'] == 'artist' else seed['song_title']} Radio"
+
+        # Map curated IDs back to the full tracks, preserving curation order
+        track_by_id = {track["id"]: track for track in candidate_tracks}
+        curated_tracks = [track_by_id[tid] for tid in curated_track_ids if tid in track_by_id]
+
+        # Hold the seed artist to its share of the station, then guarantee the
+        # station still opens with the seed (the cap keeps its earliest tracks)
+        curated_tracks, seed_cap = cap_seed_artist(
+            curated_tracks, seed,
+            num_tracks=request.playlist_length,
+            candidate_pool=candidate_tracks
+        )
+        if seed_cap["dropped_for_seed_cap"]:
+            scheduler_logger.info(
+                f"📻 Radio: capped seed artist '{seed.get('artist_name')}' at "
+                f"{seed_cap['seed_artist_limit']} track(s), dropped "
+                f"{seed_cap['dropped_for_seed_cap']}, backfilled {seed_cap['backfilled']}"
+            )
+
+        curated_tracks = promote_seed_first(curated_tracks, seed, candidate_tracks)
+        curated_track_ids = [track["id"] for track in curated_tracks]
+        track_summaries = summarise_tracks(curated_tracks)
+
+        # Create the playlist in Navidrome (reasoning stored as comment)
+        comment_to_use = reasoning if reasoning else None
+        navidrome_playlist_id = await nav_client.create_playlist(
+            name=playlist_name,
+            track_ids=curated_track_ids,
+            comment=comment_to_use
+        )
+
+        # Report the gap when a thin library couldn't fill the requested length
+        shortfall = build_shortfall(
+            requested=request.playlist_length,
+            delivered=len(track_summaries),
+            candidate_pool_size=len(candidate_tracks),
+            distinct_artists=count_distinct_artists(curated_tracks)
+        )
+        if shortfall["is_short"]:
+            scheduler_logger.info(
+                f"📻 Radio: '{playlist_name}' came up {shortfall['missing']} track(s) short "
+                f"({len(track_summaries)}/{request.playlist_length}) from a pool of {len(candidate_tracks)}"
+            )
+
+        # Point each "not in your library" album at Lidarr's add-new search
+        album_suggestions = [
+            {**suggestion, "lidarr_url": lidarr_add_url(suggestion.get("artist"), suggestion.get("album"))}
+            for suggestion in (album_suggestions or [])
+        ]
+
+        # Store the seed in artist_id so scheduled refreshes can regenerate the station
+        stored_seed_id = f"radio:{seed['type']}:{seed['id']}"
+        playlist = await db.create_playlist(
+            artist_id=stored_seed_id,
+            playlist_name=playlist_name,
+            songs=track_summaries,
+            reasoning=reasoning,
+            navidrome_playlist_id=navidrome_playlist_id,
+            playlist_length=request.playlist_length,
+            library_ids=request.library_ids
+        )
+
+        # Handle scheduling if requested
+        if request.refresh_frequency not in ["none", "never"]:
+            next_refresh = calculate_next_refresh(request.refresh_frequency)
+            await db.create_scheduled_playlist(
+                playlist_type="radio",
+                navidrome_playlist_id=navidrome_playlist_id,
+                refresh_frequency=request.refresh_frequency,
+                next_refresh=next_refresh
+            )
+            schedule_playlist_refresh()
+            scheduler_logger.info(f"📅 Scheduled {request.refresh_frequency} refresh for Radio playlist: {playlist_name}")
+
+        playlist_dict = playlist.dict() if hasattr(playlist, 'dict') else playlist.__dict__
+        playlist_dict["navidrome_playlist_id"] = navidrome_playlist_id
+        playlist_dict["refresh_frequency"] = request.refresh_frequency
+        playlist_dict["reasoning"] = reasoning
+        playlist_dict["album_suggestions"] = album_suggestions
+        playlist_dict["seed_name"] = seed["name"]
+        playlist_dict["track_count"] = len(track_summaries)
+        playlist_dict["shortfall"] = shortfall
+        return playlist_dict
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = str(e)
+        if "Invalid username or password" in error_msg or "No authentication method available" in error_msg:
+            raise HTTPException(status_code=401, detail=error_msg)
+        elif "Network error" in error_msg or "connecting to Navidrome" in error_msg:
+            raise HTTPException(status_code=503, detail=f"Cannot connect to Navidrome server: {error_msg}")
+        raise HTTPException(status_code=500, detail=f"Failed to create radio playlist: {error_msg}")
 
 @app.get("/api/rediscover-weekly", response_model=RediscoverWeeklyResponse)
 async def get_rediscover_weekly():
@@ -763,14 +1044,14 @@ async def create_rediscover_playlist_v2(
         scheduler_logger.info(f"✅ Navidrome playlist created: {navidrome_playlist_id}")
 
         # Get track titles for database storage
-        track_titles = [track.get("title", "Unknown") for track in tracks]
-        scheduler_logger.info(f"📊 Storing {len(track_titles)} track titles in database")
+        track_summaries = summarise_tracks(tracks)
+        scheduler_logger.info(f"📊 Storing {len(track_summaries)} tracks in database")
 
         # Store playlist in local database (using a synthetic artist_id for rediscover playlists)
         playlist_record = await db.create_playlist(
             artist_id="rediscover_v2",
             playlist_name=playlist_name,
-            songs=track_titles,
+            songs=track_summaries,
             reasoning=ai_reasoning,
             navidrome_playlist_id=navidrome_playlist_id,
             playlist_length=len(tracks),
@@ -876,15 +1157,15 @@ async def create_rediscover_playlist(
         scheduler_logger.info(f"✅ Navidrome playlist created: {navidrome_playlist_id}")
         
         # Get track titles for database storage
-        track_titles = [track["title"] for track in tracks]
-        scheduler_logger.info(f"📊 Storing {len(track_titles)} track titles in database")
+        track_summaries = summarise_tracks(tracks)
+        scheduler_logger.info(f"📊 Storing {len(track_summaries)} tracks in database")
 
         # Store playlist in local database (using a synthetic artist_id for rediscover playlists)
         scheduler_logger.info("💾 Creating playlist in database...")
         playlist = await db.create_playlist(
             artist_id="rediscover",
             playlist_name=playlist_name,
-            songs=track_titles,
+            songs=track_summaries,
             reasoning=ai_reasoning if ai_curated else "Algorithmic selection",
             navidrome_playlist_id=navidrome_playlist_id,
             playlist_length=request.playlist_length
@@ -1019,6 +1300,8 @@ async def refresh_scheduled_playlists():
                 await refresh_rediscover_playlist(scheduled_playlist, db)
             elif scheduled_playlist.playlist_type == "this_is":
                 await refresh_this_is_playlist(scheduled_playlist, db)
+            elif scheduled_playlist.playlist_type == "radio":
+                await refresh_radio_playlist(scheduled_playlist, db)
                 
     except Exception as e:
         scheduler_logger.error(f"❌ Error checking scheduled playlists: {e}")
@@ -1044,7 +1327,7 @@ async def refresh_rediscover_playlist(scheduled_playlist, db: DatabaseManager):
         scheduler_logger.info(f"🎯 Using original playlist length: {original_length}")
         
         # Get previous playlist songs for variety context
-        previous_songs = original_playlist.get("songs", [])[:10]
+        previous_songs = song_labels(original_playlist.get("songs", []))[:10]
         variety_instruction = f"REFRESH CHALLENGE: The current playlist opens with these tracks in this order: {', '.join(previous_songs[:5])}. Your goal is to create a FRESH arrangement that tells a different musical story. You may include some of the same excellent tracks if they're rediscovery-worthy, but avoid replicating the same opening sequence or overall flow. Think creatively about re-ordering, substituting, or finding better transitions to ensure a genuinely refreshed listening experience." if previous_songs else ""
         
         # Get AI client for v2.0 processor
@@ -1108,11 +1391,11 @@ async def refresh_rediscover_playlist(scheduled_playlist, db: DatabaseManager):
             )
             
             # Update the local database with new songs and reasoning
-            track_titles = [track["title"] for track in tracks]
+            track_summaries = summarise_tracks(tracks)
             reasoning_to_store = ai_reasoning if ai_curated else "Algorithmic selection"
             await db.update_playlist_content(
                 navidrome_playlist_id=scheduled_playlist.navidrome_playlist_id,
-                songs=track_titles,
+                songs=track_summaries,
                 reasoning=reasoning_to_store
             )
             
@@ -1179,7 +1462,7 @@ async def refresh_this_is_playlist(scheduled_playlist, db: DatabaseManager):
                 original_length = len(tracks)
             
             # Get previous playlist songs for STRONG variety enforcement
-            previous_songs = original_playlist.get("songs", [])
+            previous_songs = song_labels(original_playlist.get("songs", []))
             variety_instruction = f"REFRESH CONSTRAINT: This is a REFRESH, not a copy. Previous playlist had these tracks: {', '.join(previous_songs[:10])}. Create a completely different track selection and arrangement. Prioritize tracks NOT in the previous list. Tell a fresh musical story. Avoid identical opening sequences." if previous_songs else "Create a fresh, engaging playlist arrangement."
             
             # Prepare tracks with variety instruction - use a more direct approach
@@ -1222,15 +1505,11 @@ async def refresh_this_is_playlist(scheduled_playlist, db: DatabaseManager):
                 )
                 
                 # Update the local database with new songs and reasoning
-                track_titles = []
-                track_id_to_title = {track["id"]: track["title"] for track in tracks}
-                for track_id in curated_track_ids:
-                    if track_id in track_id_to_title:
-                        track_titles.append(track_id_to_title[track_id])
+                track_summaries = summarise_tracks(tracks, order=curated_track_ids)
                 
                 await db.update_playlist_content(
                     navidrome_playlist_id=scheduled_playlist.navidrome_playlist_id,
-                    songs=track_titles,
+                    songs=track_summaries,
                     reasoning=reasoning
                 )
                 
@@ -1252,15 +1531,109 @@ async def refresh_this_is_playlist(scheduled_playlist, db: DatabaseManager):
     except Exception as e:
         scheduler_logger.error(f"❌ Error refreshing This Is playlist {scheduled_playlist.navidrome_playlist_id}: {e}")
 
+async def refresh_radio_playlist(scheduled_playlist, db: DatabaseManager):
+    """Refresh a specific Radio playlist by regenerating the station from its seed"""
+    try:
+        scheduler_logger.info(f"🔄 Starting refresh for Radio playlist ID: {scheduled_playlist.navidrome_playlist_id} (frequency: {scheduled_playlist.refresh_frequency})")
+
+        nav_client = get_navidrome_client()
+        ai_client_instance = get_ai_client()
+
+        # Find the original playlist to recover the seed and length
+        playlists = await db.get_all_playlists_with_schedule_info()
+        original_playlist = next((p for p in playlists if p.get("navidrome_playlist_id") == scheduled_playlist.navidrome_playlist_id), None)
+        if not original_playlist:
+            scheduler_logger.error(f"❌ Could not find original playlist data for {scheduled_playlist.navidrome_playlist_id}")
+            return
+
+        # The seed was stored in artist_id as "radio:{seed_type}:{seed_id}"
+        stored_seed = original_playlist.get("artist_id", "")
+        parts = stored_seed.split(":", 2)
+        if len(parts) != 3 or parts[0] != "radio":
+            scheduler_logger.error(f"❌ Malformed radio seed '{stored_seed}' for playlist {scheduled_playlist.navidrome_playlist_id}")
+            return
+        seed_type, seed_id = parts[1], parts[2]
+
+        library_ids = original_playlist.get("library_ids") or None
+        original_length = original_playlist.get("playlist_length", 25)
+
+        # Resolve seed and gather fresh candidates
+        processor = RadioProcessor(nav_client)
+        seed = await processor.resolve_seed(seed_type, seed_id, library_ids)
+        candidate_tracks = await processor.gather_candidate_tracks(seed, library_ids)
+        if not candidate_tracks:
+            scheduler_logger.warning(f"⚠️ No candidate tracks for radio refresh of {scheduled_playlist.navidrome_playlist_id}")
+            return
+
+        library_stats = await nav_client.get_library_stats()
+        filtered_tracks, _ = filter_tracks_for_this_is_playlist(
+            source_tracks=candidate_tracks,
+            target_playlist_size=original_length,
+            library_stats=library_stats
+        )
+
+        # Encourage a fresh arrangement relative to the previous run
+        previous_songs = song_labels(original_playlist.get("songs", []))[:10]
+        variety_instruction = (
+            f"REFRESH: The previous station opened with: {', '.join(previous_songs[:5])}. "
+            f"Keep it on-theme but vary the selection and ordering for a fresh listen."
+        ) if previous_songs else ""
+
+        curated_track_ids, reasoning, _ = await ai_client_instance.curate_radio(
+            seed_name=seed["name"],
+            tracks_json=filtered_tracks,
+            num_tracks=original_length,
+            include_reasoning=True,
+            variety_context=variety_instruction
+        )
+
+        if not curated_track_ids:
+            scheduler_logger.warning(f"⚠️ No curated tracks generated for radio playlist {scheduled_playlist.navidrome_playlist_id}")
+            return
+
+        # Keep the seed-artist cap and the seed-first rule across refreshes,
+        # not just on first creation
+        track_by_id = {track["id"]: track for track in candidate_tracks}
+        curated_tracks, _ = cap_seed_artist(
+            [track_by_id[tid] for tid in curated_track_ids if tid in track_by_id],
+            seed,
+            num_tracks=original_length,
+            candidate_pool=candidate_tracks
+        )
+        curated_tracks = promote_seed_first(curated_tracks, seed, candidate_tracks)
+        curated_track_ids = [track["id"] for track in curated_tracks]
+
+        await nav_client.update_playlist(
+            playlist_id=scheduled_playlist.navidrome_playlist_id,
+            track_ids=curated_track_ids,
+            comment=reasoning if reasoning else None
+        )
+
+        track_summaries = summarise_tracks(candidate_tracks, order=curated_track_ids)
+        await db.update_playlist_content(
+            navidrome_playlist_id=scheduled_playlist.navidrome_playlist_id,
+            songs=track_summaries,
+            reasoning=reasoning
+        )
+
+        next_refresh = calculate_next_refresh(scheduled_playlist.refresh_frequency)
+        await db.update_scheduled_playlist_next_refresh(scheduled_playlist.id, next_refresh)
+
+        scheduler_logger.info(f"✅ Successfully refreshed Radio playlist {scheduled_playlist.navidrome_playlist_id}. Next refresh: {next_refresh.strftime('%Y-%m-%d %H:%M:%S')}")
+
+    except Exception as e:
+        scheduler_logger.error(f"❌ Error refreshing Radio playlist {scheduled_playlist.navidrome_playlist_id}: {e}")
+
 @app.get("/api/playlists")
 async def get_all_playlists(db: DatabaseManager = Depends(get_db)):
     """Get all playlists with scheduling information"""
     try:
         playlists = await db.get_all_playlists_with_schedule_info()
-        # Add track count to each playlist
+        # Present every row's tracks in one shape, whichever era it was written in
         for playlist in playlists:
             songs = playlist.get("songs", [])
-            playlist["track_count"] = len(songs) if isinstance(songs, list) else 0
+            playlist["songs"] = normalise_stored_songs(songs if isinstance(songs, list) else [])
+            playlist["track_count"] = len(playlist["songs"])
         return playlists
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch playlists: {str(e)}")
@@ -1444,14 +1817,14 @@ async def track_library_size(db: DatabaseManager = Depends(get_db)):
 async def spa_router(request: Request, path: str):
     """Handle SPA routing - serve app for known paths, redirect unknown paths"""
     # Known SPA paths - serve the app and let frontend handle routing
-    spa_paths = ["this-is", "re-discover", "playlists", "terms"]
+    spa_paths = ["this-is", "re-discover", "genre-mix", "radio", "playlists", "terms"]
     
     if path in spa_paths:
         # Apply same system check logic as root
         if not system_check_passed:
             from fastapi.responses import RedirectResponse
             return RedirectResponse(url="/system-check", status_code=302)
-        return templates.TemplateResponse("index.html", {"request": request})
+        return render_index(request)
     
     # Unknown paths - redirect to home
     from fastapi.responses import RedirectResponse
@@ -1460,8 +1833,9 @@ async def spa_router(request: Request, path: str):
 if __name__ == "__main__":
     # Custom logging config to filter out Umami heartbeat requests
     import uvicorn.config
-    
-    class FilteredUvicornFormatter(uvicorn.formatters.DefaultFormatter):
+    import uvicorn.logging
+
+    class FilteredUvicornFormatter(uvicorn.logging.AccessFormatter):
         def format(self, record):
             # Filter out GET / requests (Umami heartbeats) from access logs
             if hasattr(record, 'args') and record.args:
@@ -1475,9 +1849,11 @@ if __name__ == "__main__":
     log_config = uvicorn.config.LOGGING_CONFIG
     log_config["formatters"]["access"]["()"] = FilteredUvicornFormatter
     
+    # The app serves on 4545 everywhere — direct run, the Docker image's CMD, and
+    # the compose 4545:4545 mapping. Overridable via PORT.
     uvicorn.run(
-        app, 
-        host="0.0.0.0", 
-        port=8000,
+        app,
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "4545")),
         log_config=log_config
     )

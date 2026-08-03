@@ -1,0 +1,277 @@
+/* =========================================================================
+   winterbottom.xyz — shared design system
+   -------------------------------------------------------------------------
+   Canonical source: docker-infra/design-system/winterbottom.css
+   Vendored into each app's static dir. When you change this file, copy it
+   to every app (see design-system/LOOK-AND-FEEL.md → "Keeping apps in sync").
+
+   Personality: a calm self-hosted control panel. Cool-slate neutrals, one
+   warm amber accent, monospace for labels/data. Light + dark, first-class.
+   Everything is driven by the tokens below — style through the tokens,
+   never hard-code a hex in an app.
+   ========================================================================= */
+
+:root {
+  /* ---- Neutrals (cool slate, light) ---- */
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --surface-2: #e9edf2;
+  --border: #d9dee6;
+  --ink: #14171c;
+  --ink-2: #545b66;
+  --ink-3: #878e9a;
+
+  /* ---- Accent: amber (light) ---- */
+  --accent: #a5620f;
+  --accent-hover: #8f5309;
+  --accent-ink: #ffffff;
+  --accent-tint: #f6ead7;
+
+  /* ---- Semantic: money / status ---- */
+  --pos: #1c8a4e;
+  --neg: #c23b3b;
+  --warn: #b97d12;
+
+  /* ---- Type ---- */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+
+  /* ---- Radius / elevation ---- */
+  --r-sm: 8px;
+  --r: 12px;
+  --r-lg: 16px;
+  --shadow: 0 1px 2px rgba(18,24,33,.06), 0 8px 24px rgba(18,24,33,.06);
+  --shadow-sm: 0 1px 2px rgba(18,24,33,.07);
+
+  color-scheme: light;
+}
+
+/* Dark — follows the device unless an explicit data-theme overrides it. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c0e12;
+    --surface: #14181e;
+    --surface-2: #1c212a;
+    --border: #29303b;
+    --ink: #e8ebf0;
+    --ink-2: #a4adba;
+    --ink-3: #6d7683;
+    --accent: #f0b24a;
+    --accent-hover: #f6c268;
+    --accent-ink: #241703;
+    --accent-tint: #241d10;
+    --pos: #46c47f;
+    --neg: #ef7a75;
+    --warn: #e0a63a;
+    --shadow: 0 1px 2px rgba(0,0,0,.5), 0 10px 30px rgba(0,0,0,.42);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.5);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c0e12;
+  --surface: #14181e;
+  --surface-2: #1c212a;
+  --border: #29303b;
+  --ink: #e8ebf0;
+  --ink-2: #a4adba;
+  --ink-3: #6d7683;
+  --accent: #f0b24a;
+  --accent-hover: #f6c268;
+  --accent-ink: #241703;
+  --accent-tint: #241d10;
+  --pos: #46c47f;
+  --neg: #ef7a75;
+  --warn: #e0a63a;
+  --shadow: 0 1px 2px rgba(0,0,0,.5), 0 10px 30px rgba(0,0,0,.42);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.5);
+  color-scheme: dark;
+}
+
+/* ===================== Base ===================== */
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); }
+:where(h1, h2, h3) { letter-spacing: -.02em; text-wrap: balance; }
+::selection { background: var(--accent-tint); color: var(--ink); }
+
+:where(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* Uppercase monospace label — the system's signature. */
+.wb-eyebrow, .wb-label {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  font-size: .72rem;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+.wb-eyebrow { color: var(--accent); }
+
+/* Icons — one line language via the shared sprite (winterbottom-icons.svg).
+   Reference: <svg class="wb-icon"><use href="/static/winterbottom-icons.svg#wb-cash"/></svg>
+   Icons draw in currentColor, so colour the parent (a token) and never the icon. */
+.wb-icon { width: 1.25em; height: 1.25em; display: inline-block; vertical-align: -0.15em; flex: none; }
+.wb-icon--sm { width: 1em; height: 1em; }
+.wb-icon--lg { width: 1.5em; height: 1.5em; }
+.wb-icon--fill { fill: currentColor; }           /* e.g. an active/starred favourite */
+.wb-icon--spin { animation: wb-spin 0.8s linear infinite; }
+@keyframes wb-spin { to { transform: rotate(360deg); } }
+
+/* Monospace tabular figures — use on every column of numbers. */
+.wb-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.wb-pos { color: var(--pos); }
+.wb-neg { color: var(--neg); }
+.wb-muted { color: var(--ink-2); }
+
+/* ===================== App shell / toolbar ===================== */
+/* Intentionally NOT sticky: a sticky bar overlaps page content and breaks
+   coordinate-based touch drag-and-drop (elementFromPoint hits the bar instead
+   of the row underneath). Keep it in normal flow. */
+.wb-appbar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.wb-brand { display: flex; align-items: center; gap: 9px; font-family: var(--font-mono); font-size: .9rem; font-weight: 600; color: var(--ink); text-decoration: none; }
+.wb-brand__mark {
+  width: 28px; height: 28px; border-radius: 8px; flex: none;
+  background: var(--accent); color: var(--accent-ink);
+  display: grid; place-items: center;
+  font-family: var(--font-mono); font-weight: 700; font-size: 14px;
+  box-shadow: var(--shadow-sm);
+}
+.wb-nav { display: flex; gap: 3px; flex-wrap: wrap; }
+.wb-nav a { font-size: .86rem; color: var(--ink-2); text-decoration: none; padding: 6px 10px; border-radius: 7px; }
+.wb-nav a:hover { color: var(--ink); background: var(--surface-2); }
+.wb-nav a[aria-current], .wb-nav a.is-active { color: var(--accent); background: var(--accent-tint); }
+.wb-acct { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.wb-who { font-family: var(--font-mono); font-size: .75rem; color: var(--ink-3); }
+.wb-who b { color: var(--ink-2); font-weight: 600; }
+.wb-signout {
+  font-family: var(--font-mono); font-size: .75rem; color: var(--ink-2); text-decoration: none;
+  border: 1px solid var(--border); border-radius: 7px; padding: 6px 11px; background: var(--surface); cursor: pointer;
+}
+.wb-signout:hover { color: var(--ink); border-color: var(--ink-3); }
+.wb-iconbtn {
+  display: inline-grid; place-items: center; width: 34px; height: 34px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+  color: var(--ink-2); cursor: pointer;
+}
+.wb-iconbtn:hover { color: var(--ink); border-color: var(--ink-3); }
+
+/* ===================== Buttons ===================== */
+.wb-btn {
+  font-family: var(--font-sans); font-size: .92rem; font-weight: 600;
+  border-radius: var(--r-sm); padding: 10px 16px; cursor: pointer;
+  border: 1px solid transparent; display: inline-flex; align-items: center; gap: 8px;
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+  text-decoration: none;
+}
+.wb-btn--primary { background: var(--accent); color: var(--accent-ink); }
+.wb-btn--primary:hover { background: var(--accent-hover); }
+.wb-btn--secondary { background: var(--surface-2); color: var(--ink); border-color: var(--border); }
+.wb-btn--secondary:hover { border-color: var(--ink-3); }
+.wb-btn--ghost { background: transparent; color: var(--accent); }
+.wb-btn--ghost:hover { background: var(--accent-tint); }
+.wb-btn--danger { background: transparent; color: var(--neg); border-color: color-mix(in srgb, var(--neg) 45%, transparent); }
+.wb-btn--danger:hover { background: color-mix(in srgb, var(--neg) 12%, var(--surface)); }
+.wb-btn--sm { padding: 6px 11px; font-size: .82rem; }
+.wb-btn:disabled { opacity: .55; cursor: not-allowed; }
+
+/* ===================== Cards & surfaces ===================== */
+.wb-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 20px; box-shadow: var(--shadow-sm);
+}
+
+/* ===================== Form controls ===================== */
+.wb-input, .wb-select, .wb-textarea {
+  font: inherit; font-size: .95rem; width: 100%;
+  padding: 10px 12px; border-radius: var(--r-sm);
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+}
+/* min-height clears ~3 wrapped lines so example placeholders don't clip on
+   narrow phones. Pair with rows="3" on multi-line inputs (see LOOK-AND-FEEL). */
+.wb-textarea { resize: vertical; min-height: 84px; }
+.wb-input:focus, .wb-select:focus, .wb-textarea:focus {
+  outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent);
+}
+.wb-field { display: grid; gap: 7px; }
+.wb-field > label { font-size: .88rem; font-weight: 600; }
+
+/* Chips (radio-style pills) */
+.wb-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.wb-chip {
+  font: inherit; font-size: .88rem; padding: 8px 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface); color: var(--ink-2);
+  transition: transform .05s ease;
+}
+.wb-chip:hover { transform: translateY(-1px); }
+.wb-chip[aria-pressed="true"], .wb-chip[aria-checked="true"] {
+  background: var(--accent); color: var(--accent-ink); border-color: var(--accent);
+}
+
+/* ===================== Badges / pills ===================== */
+.wb-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-family: var(--font-mono); font-size: .72rem; font-weight: 600; letter-spacing: .02em;
+  padding: 3px 9px; border-radius: 999px;
+}
+.wb-pill--pos     { background: color-mix(in srgb, var(--pos) 16%, var(--surface)); color: var(--pos); }
+.wb-pill--neg     { background: color-mix(in srgb, var(--neg) 15%, var(--surface)); color: var(--neg); }
+.wb-pill--warn    { background: color-mix(in srgb, var(--warn) 18%, var(--surface)); color: var(--warn); }
+.wb-pill--neutral { background: var(--surface-2); color: var(--ink-2); }
+.wb-pill--accent  { background: var(--accent-tint); color: var(--accent); }
+
+/* ===================== Stat tiles ===================== */
+.wb-stat { display: grid; gap: 4px; }
+.wb-stat__label { font-family: var(--font-mono); font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); }
+.wb-stat__num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 2rem; font-weight: 700; letter-spacing: -.02em; }
+
+/* ===================== Data table ===================== */
+.wb-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); }
+.wb-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.wb-table th {
+  text-align: left; font-family: var(--font-mono); font-size: .7rem; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--ink-3); font-weight: 600; padding: 11px 14px; border-bottom: 1px solid var(--border); background: var(--surface-2);
+}
+.wb-table td { padding: 11px 14px; border-bottom: 1px solid var(--border); color: var(--ink-2); }
+.wb-table tr:last-child td { border-bottom: 0; }
+.wb-table td.wb-name { color: var(--ink); font-weight: 500; }
+.wb-table .wb-num { text-align: right; }
+
+/* ===================== Login / signed-out ===================== */
+.wb-login { min-height: 100dvh; display: grid; place-items: center; padding: 24px; background: var(--bg); }
+.wb-login-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+  padding: 36px 30px; max-width: 340px; width: 100%; text-align: center; box-shadow: var(--shadow);
+}
+.wb-login-card .wb-brand__mark { width: 44px; height: 44px; border-radius: 12px; font-size: 21px; margin: 0 auto 16px; }
+.wb-login-card h1 { font-family: var(--font-mono); font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); font-weight: 600; margin: 0 0 6px; }
+.wb-login-card p { color: var(--ink-2); font-size: .9rem; margin: 0 0 22px; }
+.wb-login-card .wb-error { color: var(--neg); font-size: .85rem; margin-top: 14px; }
+/* Microsoft button keeps Microsoft's own brand treatment in both themes. */
+.wb-btn-ms {
+  display: inline-flex; align-items: center; gap: 10px;
+  background: #ffffff; border: 1px solid #8c8c8c; border-radius: var(--r-sm);
+  padding: 10px 18px; font-size: .9rem; font-weight: 600; color: #1e293b; text-decoration: none; cursor: pointer;
+}
+.wb-btn-ms:hover { background: #eef1f5; }
+.wb-btn-ms svg { flex: none; }

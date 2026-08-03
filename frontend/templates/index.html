@@ -4,7 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Magic Lists</title>
-    
+
+    <!-- Shared winterbottom design system (vendored from docker-infra/design-system).
+         The theme script is NOT deferred so the saved light/dark choice is applied
+         before first paint — deferring it causes a flash of the wrong theme. -->
+    <script src="/static/winterbottom-theme.js"></script>
+    <link rel="stylesheet" href="/static/winterbottom.css">
+
+    <!-- Installable app -->
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="icon" href="/static/assets/favicon.ico" sizes="any">
+    <link rel="apple-touch-icon" href="/static/assets/apple-touch-icon.png">
+    <meta name="theme-color" content="#f0b24a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Magic Lists">
+    <meta name="mobile-web-app-capable" content="yes">
+
     <!-- Inter font -->
     <!-- <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet"> -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,6 +35,62 @@
 
     <!-- Tailwind CSS (required for Preline) -->
     <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Point Tailwind's palette at the design tokens, so the ~400 utility
+         classes already in this page resolve to winterbottom colours and follow
+         the light/dark toggle without touching the markup. `black` is left
+         alone: it is only used for the modal overlay, where Tailwind's
+         bg-opacity utility needs a real colour to blend. -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        white: 'var(--surface)',
+                        gray: {
+                            50: 'var(--surface-2)',
+                            100: 'var(--bg)',
+                            200: 'var(--border)',
+                            300: 'var(--border)',
+                            400: 'var(--ink-3)',
+                            500: 'var(--ink-2)',
+                            600: 'var(--ink-2)',
+                            700: 'var(--ink)',
+                            800: 'var(--ink)',
+                            900: 'var(--ink)'
+                        },
+                        blue: {
+                            50: 'var(--accent-tint)', 200: 'var(--accent-tint)',
+                            400: 'var(--accent)', 500: 'var(--accent)',
+                            600: 'var(--accent)', 800: 'var(--accent)'
+                        },
+                        indigo: {
+                            50: 'var(--accent-tint)', 200: 'var(--accent-tint)',
+                            400: 'var(--accent)', 600: 'var(--accent)', 800: 'var(--accent)'
+                        },
+                        red: {
+                            50: 'var(--surface-2)', 100: 'var(--border)', 200: 'var(--border)',
+                            300: 'var(--neg)', 400: 'var(--neg)', 500: 'var(--neg)',
+                            600: 'var(--neg)', 700: 'var(--neg)', 800: 'var(--neg)'
+                        },
+                        green: {
+                            50: 'var(--surface-2)', 200: 'var(--border)', 300: 'var(--pos)',
+                            400: 'var(--pos)', 600: 'var(--pos)', 700: 'var(--pos)', 800: 'var(--pos)'
+                        },
+                        emerald: { 500: 'var(--pos)', 600: 'var(--pos)' },
+                        amber: {
+                            50: 'var(--surface-2)', 200: 'var(--border)',
+                            800: 'var(--warn)', 900: 'var(--warn)'
+                        },
+                        yellow: { 400: 'var(--warn)', 600: 'var(--warn)' }
+                    }
+                }
+            }
+        };
+    </script>
+
+    <!-- App-local layer: must load after Tailwind (see the file header) -->
+    <link rel="stylesheet" href="/static/magiclists.css">
 
     <!-- Preline UI -->
     <script src="https://cdn.jsdelivr.net/npm/preline@latest/dist/preline.min.js"></script>
@@ -54,10 +125,15 @@
                 <div class="flex items-center justify-between">
                     <div class="flex items-center">
                         <a class="flex items-center text-xl font-bold" href="#" data-page="home">
-                            <img src="/static/assets/ml-logo.svg" alt="Magic Lists" class="h-10 w-auto">
+                            <img src="/static/assets/ml-logo.svg" alt="Magic Lists" class="ml-logo h-10 w-auto">
                         </a>
                     </div>
-                    <div class="mobile-toggle"> 
+                    <div class="mobile-toggle flex items-center gap-x-2">
+                        <!-- Light/dark toggle — wired by winterbottom-theme.js -->
+                        <button type="button" id="theme-toggle" data-wb-theme-toggle aria-label="Switch theme">
+                            <span data-wb-theme-icon aria-hidden="true">☀</span>
+                        </button>
+
                         <button type="button" class="md:hidden hs-collapse-toggle relative size-9 flex justify-center items-center gap-x-2 rounded-lg border border-gray-200 bg-white text-gray-800 shadow-2xs hover:bg-gray-50 focus:outline-hidden focus:bg-gray-50 disabled:opacity-50 disabled:pointer-events-none " id="hs-navbar-alignment-collapse" aria-expanded="false" aria-controls="hs-navbar-alignment" aria-label="Toggle navigation" data-hs-collapse="#hs-navbar-alignment">
                             <svg class="hs-collapse-open:hidden shrink-0 size-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" x2="21" y1="6" y2="6"/><line x1="3" x2="21" y1="12" y2="12"/><line x1="3" x2="21" y1="18" y2="18"/></svg>
                             <svg class="hs-collapse-open:block hidden shrink-0 size-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
@@ -145,13 +221,24 @@
                                  <span class="">Re-Discover</span>
                              </a>
 
-                             <a class="flex items-center gap-x-2 py-2 px-2.5 text-sm text-gray-900 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:bg-gray-200" href="#" data-page="genre-mix">
+                             <a class="flex items-center gap-x-2 py-2 px-2.5 mb-1 text-sm text-gray-900 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:bg-gray-200" href="#" data-page="genre-mix">
                                  <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                      <path d="M9 18V5l12-2v13"/>
                                      <circle cx="6" cy="18" r="3"/>
                                      <circle cx="18" cy="16" r="3"/>
                                  </svg>
                                  <span class="">Genre Mix</span>
+                             </a>
+
+                             <a class="flex items-center gap-x-2 py-2 px-2.5 text-sm text-gray-900 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus:bg-gray-200" href="#" data-page="radio">
+                                 <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                     <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
+                                     <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/>
+                                     <circle cx="12" cy="12" r="2"/>
+                                     <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
+                                     <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>
+                                 </svg>
+                                 <span class="">Radio</span>
                              </a>
                          </div>
 
@@ -263,13 +350,24 @@
                                          <span class="">Re-Discover</span>
                                      </a>
 
-                                     <a class="flex items-center gap-x-3.5 py-2 px-2.5 text-sm text-gray-900 bg-white rounded-lg hover:bg-gray-100 focus:outline-none focus:bg-gray-100" href="#" data-page="genre-mix">
+                                     <a class="flex items-center gap-x-3.5 py-2 px-2.5 mb-1 text-sm text-gray-900 bg-white rounded-lg hover:bg-gray-100 focus:outline-none focus:bg-gray-100" href="#" data-page="genre-mix">
                                          <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                              <path d="M9 18V5l12-2v13"/>
                                              <circle cx="6" cy="18" r="3"/>
                                              <circle cx="18" cy="16" r="3"/>
                                          </svg>
                                          <span class="">Genre Mix</span>
+                                     </a>
+
+                                     <a class="flex items-center gap-x-3.5 py-2 px-2.5 text-sm text-gray-900 bg-white rounded-lg hover:bg-gray-100 focus:outline-none focus:bg-gray-100" href="#" data-page="radio">
+                                         <svg class="w-4 h-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                             <path d="M4.9 19.1C1 15.2 1 8.8 4.9 4.9"/>
+                                             <path d="M7.8 16.2c-2.3-2.3-2.3-6.1 0-8.5"/>
+                                             <circle cx="12" cy="12" r="2"/>
+                                             <path d="M16.2 7.8c2.3 2.3 2.3 6.1 0 8.5"/>
+                                             <path d="M19.1 4.9C23 8.8 23 15.1 19.1 19"/>
+                                         </svg>
+                                         <span class="">Radio</span>
                                      </a>
                                  </div>
 
@@ -345,10 +443,15 @@
                         </div>
                         
                         <div>
+                            <h3 class="text-base font-bold text-gray-500 mb-0"><a href="#" data-page="radio" class="text-indigo-600 hover:text-indigo-800 transition-color font-bold border-b border-indigo-200">Radio</a></h3>
+                            <p class="text-gray-600">Start a station from an artist or a song. Pulls similar-style tracks from your library — weighing popularity and release date — and suggests albums by fitting artists you don't own yet.</p>
+                        </div>
+
+                        <div>
                             <h3 class="text-base font-bold text-gray-500 mb-0"><a href="#" data-page="re-discover" class="text-indigo-600 hover:text-indigo-800 transition-color font-bold border-b border-indigo-200">Re-Discover</a></h3>
                             <p class="text-gray-600">Surfaces tracks you haven't played recently so you can re-find forgotten favourites. Set it to refresh daily, weekly or monthly.</p>
                         </div>
-                        
+
                         <div>
                             <h3 class="text-base font-bold text-gray-500 mb-0">Auto-Refresh</h3>
                             <p class="text-gray-600">Schedule playlists to refresh automatically on your machine so lists stay current without manual effort.</p>
@@ -366,12 +469,14 @@
                     <h3 class="text-base font-semibold text-gray-500 mt-5 mb-2">Available Today</h3>
                     <ul class="list-disc list-outside ml-5 space-y-1 text-gray-600 mb-2">
                         <li>This Is: Create a curated mix for any artist.</li>
+                        <li>Genre Mix: Curate a mix from a whole genre collection.</li>
+                        <li>Radio: Start a similar-style station from an artist or song.</li>
                         <li>Re-Discover: Rotate forgotten tracks back into your library.</li>
                     </ul>
-                
+
                     <h3 class="text-base font-semibold text-gray-500 mt-5 mb-2">Coming Soon</h3>
                     <ul class="list-disc list-outside ml-5 space-y-1 text-gray-600 mb-4">
-                        <li>True Artist Radio (multi-artist blends)</li>
+                        <li>Multi-artist radio blends</li>
                         <li>Fresh discovery tools</li>
                         <li>Library embeddings for richer, similarity-based mixes</li>
                     </ul>
@@ -627,6 +732,141 @@
                      </form>
                  </div>
 
+                 <!-- Radio Content (hidden by default) -->
+                 <div id="radio-content" style="display: none;" class="p-4 pb-6 md:p-8 md:pb-10 bg-white md:border md:border-gray-200 md:rounded-lg">
+                     <div class="mb-6">
+                         <h1 class="text-2xl font-bold text-gray-900 mb-3">Radio</h1>
+                         <p class="text-gray-600">Start a station from an artist or a song. Magic Lists pulls similar-style tracks from your library — weighing popularity and release date — and suggests albums by fitting artists you don't own yet.</p>
+                     </div>
+
+                     <form id="radio-form" class="space-y-6">
+                         <!-- Seed Type Toggle -->
+                         <div>
+                             <label class="block text-sm text-gray-900 font-bold mb-3">Seed your station with</label>
+                             <div class="flex gap-6">
+                                 <div class="flex items-center">
+                                     <input type="radio" id="radio-seed-artist" name="radio-seed-type" value="artist" checked class="shrink-0 mt-0.5 border-gray-200 rounded-full text-blue-600 focus:ring-blue-500">
+                                     <label for="radio-seed-artist" class="text-sm text-gray-500 ms-2">An artist</label>
+                                 </div>
+                                 <div class="flex items-center">
+                                     <input type="radio" id="radio-seed-song" name="radio-seed-type" value="song" class="shrink-0 mt-0.5 border-gray-200 rounded-full text-blue-600 focus:ring-blue-500">
+                                     <label for="radio-seed-song" class="text-sm text-gray-500 ms-2">A song</label>
+                                 </div>
+                             </div>
+                         </div>
+
+                         <!-- Artist Seed Selection -->
+                         <div id="radio-artist-seed">
+                             <label for="radio-artist-select" class="block text-sm text-gray-900 font-bold mb-2">Choose an artist from your library</label>
+                             <div class="relative">
+                                 <select
+                                     id="radio-artist-select"
+                                     data-hs-select='{
+                                         "placeholder": "Search for an artist...",
+                                         "toggleTag": "<button type=\"button\"></button>",
+                                         "toggleClasses": "hs-select-disabled:pointer-events-none hs-select-disabled:opacity-50 relative py-3 px-4 pe-9 flex text-nowrap w-full cursor-pointer bg-white border border-gray-200 rounded-lg text-start text-sm focus:border-blue-500 focus:ring-blue-500 before:absolute before:inset-0 before:z-[1]",
+                                         "dropdownClasses": "hs-select-dropdown mt-2 z-50 w-full max-h-72 p-1 space-y-0.5 bg-white border border-gray-200 rounded-lg overflow-hidden overflow-y-auto [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-gray-100 [&::-webkit-scrollbar-thumb]:bg-gray-300",
+                                         "optionClasses": "py-2 px-4 w-full text-sm text-gray-800 cursor-pointer hover:bg-gray-100 rounded-lg focus:outline-none focus:bg-gray-100",
+                                         "optionTemplate": "<div class=\"flex justify-between items-center w-full\"><span data-title></span><span class=\"hidden hs-selected:block\"><svg class=\"flex-shrink-0 size-3.5 text-blue-600\" xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polyline points=\"20 6 9 17 4 12\"/></svg></span></div>",
+                                         "hasSearch": true,
+                                         "searchPlaceholder": "Search...",
+                                         "searchClasses": "block w-full text-sm border-gray-200 rounded-lg focus:border-blue-500 focus:ring-blue-500 before:absolute before:inset-0 before:z-[1] py-2 px-3",
+                                         "searchWrapperClasses": "bg-white p-2 -mx-1 sticky top-0"
+                                     }'
+                                     class="hidden"
+                                 >
+                                     <option value="">Choose an artist</option>
+                                 </select>
+                             </div>
+                         </div>
+
+                         <!-- Song Seed Selection -->
+                         <div id="radio-song-seed" class="hidden">
+                             <label for="radio-song-search" class="block text-sm text-gray-900 font-bold mb-2">Search for a song in your library</label>
+                             <div class="flex gap-2">
+                                 <input
+                                     type="text"
+                                     id="radio-song-search"
+                                     placeholder="Type a song or artist name..."
+                                     autocomplete="off"
+                                     class="block w-full py-3 px-4 border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-blue-500"
+                                 >
+                                 <button type="button" id="radio-song-search-btn" class="shrink-0 bg-gray-900 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700 transition-colors">Search</button>
+                             </div>
+                             <div id="radio-song-results" class="mt-2 space-y-1"></div>
+                             <div id="radio-song-selected" class="hidden mt-3 flex items-center justify-between p-3 border border-gray-200 rounded-lg bg-gray-50">
+                                 <span id="radio-song-selected-label" class="text-sm text-gray-900"></span>
+                                 <button type="button" id="radio-song-clear" class="text-sm font-medium underline cursor-pointer border-none bg-transparent text-red-600 hover:text-red-800 px-2 py-1">Clear</button>
+                             </div>
+                         </div>
+
+                         <!-- Options Grid -->
+                         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                             <!-- Playlist Length -->
+                             <div>
+                                 <label class="block text-sm text-gray-900 font-bold mb-3">Playlist Length</label>
+                                 <div class="space-y-3">
+                                     <div class="flex items-center">
+                                         <input type="radio" id="radio-length-25" name="radio-playlist-length" value="25" checked class="shrink-0 mt-0.5 border-gray-200 rounded-full text-blue-600 focus:ring-blue-500">
+                                         <label for="radio-length-25" class="text-sm text-gray-500 ms-2">25 tracks</label>
+                                     </div>
+                                     <div class="flex items-center">
+                                         <input type="radio" id="radio-length-50" name="radio-playlist-length" value="50" class="shrink-0 mt-0.5 border-gray-200 rounded-full text-blue-600 focus:ring-blue-500">
+                                         <label for="radio-length-50" class="text-sm text-gray-500 ms-2">50 tracks</label>
+                                     </div>
+                                     <div class="flex items-center">
+                                         <input type="radio" id="radio-length-100" name="radio-playlist-length" value="100" class="shrink-0 mt-0.5 border-gray-200 rounded-full text-blue-600 focus:ring-blue-500">
+                                         <label for="radio-length-100" class="text-sm text-gray-500 ms-2">100 tracks</label>
+                                     </div>
+                                 </div>
+                             </div>
+
+                             <!-- Refresh Frequency -->
+                             <div>
+                                 <label class="block text-sm text-gray-900 font-bold mb-3">Refresh Frequency</label>
+                                 <div class="space-y-3">
+                                     <div class="flex items-center">
+                                         <input type="radio" id="radio-freq-none" name="radio-refresh-frequency" value="none" checked class="shrink-0 mt-0.5 border-gray-200 rounded-full text-blue-600 focus:ring-blue-500">
+                                         <label for="radio-freq-none" class="text-sm text-gray-500 ms-2">Don't refresh</label>
+                                     </div>
+                                     <div class="flex items-center">
+                                         <input type="radio" id="radio-freq-daily" name="radio-refresh-frequency" value="daily" class="shrink-0 mt-0.5 border-gray-200 rounded-full text-blue-600 focus:ring-blue-500">
+                                         <label for="radio-freq-daily" class="text-sm text-gray-500 ms-2">Daily <span class="text-xs text-gray-500">(1am)</span></label>
+                                     </div>
+                                     <div class="flex items-center">
+                                         <input type="radio" id="radio-freq-weekly" name="radio-refresh-frequency" value="weekly" class="shrink-0 mt-0.5 border-gray-200 rounded-full text-blue-600 focus:ring-blue-500">
+                                         <label for="radio-freq-weekly" class="text-sm text-gray-500 ms-2">Weekly <span class="text-xs text-gray-500">(Monday 1am)</span></label>
+                                     </div>
+                                     <div class="flex items-center">
+                                         <input type="radio" id="radio-freq-monthly" name="radio-refresh-frequency" value="monthly" class="shrink-0 mt-0.5 border-gray-200 rounded-full text-blue-600 focus:ring-blue-500">
+                                         <label for="radio-freq-monthly" class="text-sm text-gray-500 ms-2">Monthly <span class="text-xs text-gray-500">(1st of month 1am)</span></label>
+                                     </div>
+                                 </div>
+                             </div>
+                         </div>
+
+                         <!-- Submit Button -->
+                         <div class="pt-4">
+                             <button
+                                 type="submit"
+                                 id="create-radio-playlist-btn"
+                                 class="w-full md:w-auto bg-gray-900 text-white font-bold py-2 px-4 md:px-6 rounded-lg hover:bg-gray-700 focus:ring-offset-2 transition-colors"
+                             >
+                                 Start Radio
+                             </button>
+                         </div>
+                     </form>
+
+                     <!-- Radio Results (album suggestions) -->
+                     <div id="radio-results" class="hidden mt-8 pt-6 border-t border-gray-200">
+                         <div id="radio-reasoning" class="mb-6 text-sm text-gray-600 italic"></div>
+                         <div id="radio-shortfall" class="hidden mb-6"></div>
+                         <h2 class="text-lg font-bold text-gray-900 mb-1">Albums to add to your library</h2>
+                         <p class="text-sm text-gray-500 mb-4">Similar-style albums that fit this station but aren't in your library yet.</p>
+                         <div id="radio-album-suggestions" class="space-y-3"></div>
+                     </div>
+                 </div>
+
                   <!-- Manage Playlists Content (hidden by default) -->
                   <div id="manage-playlists-content" style="display: none;" class="p-4 pb-6 md:p-8 md:pb-10 bg-white md:border md:border-gray-200 md:rounded-lg">
                       <div class="mb-6">
@@ -794,6 +1034,6 @@
     <div id="toast-container" class="absolute top-2 right-2 w-full max-w-sm z-50 space-y-3 pointer-events-none">
         <!-- Toasts will be dynamically inserted here -->   
     </div>
-    <script src="/static/app.js?v=1.0.0"></script>
+    <script src="/static/app.js?v={{ static_version }}"></script>
 </body>
 </html>
