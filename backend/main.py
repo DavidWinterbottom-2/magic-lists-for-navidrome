@@ -191,10 +191,30 @@ def static_version() -> str:
         return "0"
 
 
+def analytics_config() -> dict:
+    """Where to report usage analytics, if anywhere. Umami-shaped.
+
+    Upstream hardcoded a tag pointing at the original author's analytics
+    instance, so a fork silently reported every playlist build — counts, seed
+    type, AI provider and model — to a third party. Making the collector
+    configuration means it points at an instance you run, and collects nothing
+    at all until you say where.
+
+    Both values are required: a script URL with no website id (or vice versa)
+    can't report anywhere useful, so it's treated as "off" rather than
+    half-wired and silently dropping events.
+    """
+    script_url = os.getenv("ANALYTICS_SCRIPT_URL", "").strip()
+    website_id = os.getenv("ANALYTICS_WEBSITE_ID", "").strip()
+    if not script_url or not website_id:
+        return {"analytics_script_url": None, "analytics_website_id": None}
+    return {"analytics_script_url": script_url, "analytics_website_id": website_id}
+
+
 def render_index(request: Request) -> HTMLResponse:
     """Render the SPA shell with a cache-busting version for its assets"""
     return templates.TemplateResponse(
-        request, "index.html", {"static_version": static_version()}
+        request, "index.html", {"static_version": static_version(), **analytics_config()}
     )
 
 

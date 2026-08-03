@@ -269,9 +269,9 @@ async function trackLibrarySize() {
         if (response.ok) {
             const data = await response.json();
 
-            if (data.tracked && typeof window.rybbit !== 'undefined') {
-                // Track library size event with Rybbit
-                window.rybbit.event('Library Size Tracked', {
+            if (data.tracked && analyticsEnabled()) {
+                // Track library size event
+                trackEvent('Library Size Tracked', {
                     songCount: data.song_count,
                     userId: data.user_id
                 });
@@ -864,10 +864,10 @@ async function createArtistPlaylist() {
 
         const data = await response.json();
 
-        // Track successful artist playlist creation with Rybbit
-        if (typeof window.rybbit !== 'undefined') {
+        // Track successful artist playlist creation
+        if (analyticsEnabled()) {
             const modelInfo = await getAIModelInfo();
-            window.rybbit.event('This Is Playlist Created', {
+            trackEvent('This Is Playlist Created', {
                 trackCount: data.songs ? data.songs.length : 0,
                 refreshFrequency: refreshFrequency,
                 aiModel: modelInfo.model,
@@ -929,10 +929,10 @@ async function createGenrePlaylist() {
 
         const data = await response.json();
 
-        // Track successful genre playlist creation with Rybbit
-        if (typeof window.rybbit !== 'undefined') {
+        // Track successful genre playlist creation
+        if (analyticsEnabled()) {
             const modelInfo = await getAIModelInfo();
-            window.rybbit.event('Genre Mix Playlist Created', {
+            trackEvent('Genre Mix Playlist Created', {
                 trackCount: data.songs ? data.songs.length : 0,
                 refreshFrequency: refreshFrequency,
                 genre: selectedGenre,
@@ -1147,10 +1147,10 @@ async function createRadioPlaylist() {
 
         const data = await response.json();
 
-        // Track successful radio station creation with Rybbit
-        if (typeof window.rybbit !== 'undefined') {
+        // Track successful radio station creation
+        if (analyticsEnabled()) {
             const modelInfo = await getAIModelInfo();
-            window.rybbit.event('Radio Playlist Created', {
+            trackEvent('Radio Playlist Created', {
                 trackCount: data.track_count || (data.songs ? data.songs.length : 0),
                 seedType: seedType,
                 refreshFrequency: refreshFrequency,
@@ -1171,6 +1171,37 @@ async function createRadioPlaylist() {
         showToast('error', error.message);
     } finally {
         submitBtn.disabled = false;
+    }
+}
+
+// Usage analytics — Umami (self-hosted). The tracker is only present when
+// ANALYTICS_SCRIPT_URL and ANALYTICS_WEBSITE_ID are configured, so with no
+// collector these are no-ops and nothing leaves the browser.
+//
+// Call sites guard on analyticsEnabled() rather than calling trackEvent()
+// blindly, because several of them do extra work (an /api/ai-model-info round
+// trip) to build the payload, which is wasted when analytics is off.
+function analyticsEnabled() {
+    return typeof window.umami !== 'undefined';
+}
+
+function trackEvent(name, data) {
+    if (!analyticsEnabled()) return;
+    try {
+        // Umami caps event names at 50 characters and accepts typed values
+        window.umami.track(String(name).slice(0, 50), data);
+    } catch (error) {
+        console.warn('Analytics event failed:', error);
+    }
+}
+
+function trackPageview() {
+    if (!analyticsEnabled()) return;
+    try {
+        // umami.track() with no arguments records a pageview
+        window.umami.track();
+    } catch (error) {
+        console.warn('Analytics pageview failed:', error);
     }
 }
 
@@ -1285,9 +1316,9 @@ async function generateRediscoverWeekly() {
         const data = await response.json();
 
         // Track successful Re-Discover playlist creation
-        if (typeof window.rybbit !== 'undefined') {
+        if (analyticsEnabled()) {
             const modelInfo = await getAIModelInfo();
-            window.rybbit.event('Re-Discover Playlist Created', {
+            trackEvent('Re-Discover Playlist Created', {
                 trackCount: data.track_count,
                 theme: data.theme,
                 mode: data.mode,
@@ -1593,8 +1624,8 @@ async function recreatePlaylist(playlistId, playlistName, options = {}) {
         const data = await response.json();
         showToast('success', `Rebuilt "${data.playlist_name}" with ${data.track_count} tracks`);
 
-        if (typeof window.rybbit !== 'undefined') {
-            window.rybbit.event('Playlist Recreated', {
+        if (analyticsEnabled()) {
+            trackEvent('Playlist Recreated', {
                 playlistType: data.playlist_type,
                 trackCount: data.track_count
             });
@@ -1679,9 +1710,9 @@ async function runSystemChecks() {
         if (data.all_passed) {
             successBanner.classList.remove('hidden');
             
-            // Track Rybbit event
-            if (typeof window.rybbit !== 'undefined') {
-                window.rybbit.event('System Check Completed', {
+            // Track the outcome
+            if (analyticsEnabled()) {
+                trackEvent('System Check Completed', {
                     status: 'all_passed',
                     checkCount: data.checks ? data.checks.length : 0
                 });
@@ -1690,11 +1721,11 @@ async function runSystemChecks() {
             errorBanner.classList.remove('hidden');
             updateSettingsBtn.classList.remove('hidden');
             
-            // Track specific failure events with Rybbit
-            if (typeof window.rybbit !== 'undefined') {
+            // Track specific failure events
+            if (analyticsEnabled()) {
                 const failedChecks = data.checks.filter(check => check.status === 'error');
                 
-                window.rybbit.event('System Check Completed', {
+                trackEvent('System Check Completed', {
                     status: 'failed',
                     checkCount: data.checks ? data.checks.length : 0,
                     failedCount: failedChecks.length
@@ -1703,13 +1734,13 @@ async function runSystemChecks() {
                 // Track specific failure types
                 failedChecks.forEach(check => {
                     if (check.name.includes('URL Reachable')) {
-                        window.rybbit.event('System Check Failed', { type: 'url_reachable' });
+                        trackEvent('System Check Failed', { type: 'url_reachable' });
                     } else if (check.name.includes('Authentication')) {
-                        window.rybbit.event('System Check Failed', { type: 'authentication' });
+                        trackEvent('System Check Failed', { type: 'authentication' });
                     } else if (check.name.includes('Artists API')) {
-                        window.rybbit.event('System Check Failed', { type: 'artists_api' });
+                        trackEvent('System Check Failed', { type: 'artists_api' });
                     } else if (check.name.includes('AI Provider')) {
-                        window.rybbit.event('System Check Failed', { type: 'ai_provider' });
+                        trackEvent('System Check Failed', { type: 'ai_provider' });
                     }
                 });
             }
@@ -1946,9 +1977,9 @@ function getPageFromURL(pathname) {
 
 // Handle page navigation (used by both click and popstate)
 function handlePageNavigation(page) {
-    // Track page view with Rybbit
-    if (typeof window.rybbit !== 'undefined') {
-        window.rybbit.pageview();
+    // Track page view
+    if (analyticsEnabled()) {
+        trackPageview();
     }
 
     // Map page to content
