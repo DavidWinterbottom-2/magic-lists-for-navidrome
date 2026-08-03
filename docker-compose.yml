@@ -1,5 +1,13 @@
 services:
   magiclists:
+    # Published by .github/workflows/publish.yml on every push to main. Running
+    # the registry reference (rather than a locally-built tag) is what lets
+    # Watchtower see a new digest and auto-update — REPO-STANDARDS §2/§6.
+    # Pin a specific build for rollback with MAGICLISTS_VERSION=sha-<commit>.
+    image: ghcr.io/davidwinterbottom-2/magic-lists-for-navidrome:${MAGICLISTS_VERSION:-latest}
+    # Retained so the app can still be built from source:
+    #   docker compose up -d --build
+    # Plain `docker compose pull && docker compose up -d` uses the published image.
     build:
       context: .
       dockerfile: Dockerfile
@@ -13,6 +21,20 @@ services:
     volumes:
       - magiclists_data:/app/data
     restart: unless-stopped
+    labels:
+      # Opt this container in explicitly, so a Watchtower running with
+      # --label-enable only touches what it is meant to.
+      - "com.centurylinklabs.watchtower.enable=true"
+    healthcheck:
+      # The Dockerfile declares one too; repeating it here means the check still
+      # applies to a container started from a locally-built image, and makes the
+      # service's health visible to `docker compose ps` (§6).
+      test: ["CMD", "curl", "-f", "http://localhost:4545/"]
+      interval: 30s
+      timeout: 10s
+      start_period: 10s
+      retries: 3
+
 volumes:
   magiclists_data:
     driver: local
