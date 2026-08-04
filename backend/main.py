@@ -57,7 +57,24 @@ from .track_scoring import filter_tracks_for_this_is_playlist
 from .services.health_check_service import HealthCheckService
 # SYSTEM CHECK FEATURE - END
 
+from . import auth
+
 app = FastAPI(title="MagicLists Navidrome MVP")
+
+# Gate the whole app behind Microsoft Entra OIDC before any routes are defined,
+# so the Navidrome/AI credentials it holds are never reachable anonymously once
+# it's public. No-ops when AUTH_DISABLED (the default) — a trusted LAN is
+# unchanged. See backend/auth.py.
+auth.install(app)
+
+
+@app.get("/health", include_in_schema=False)
+async def health():
+    """Public liveness probe for the container healthcheck and reverse proxy.
+
+    Deliberately trivial (no Navidrome/AI/DB calls) and exempt from auth, so it
+    stays a fast, dependency-free 200 even when the app is gated."""
+    return {"status": "ok"}
 
 @app.on_event("startup")
 async def startup_event():
