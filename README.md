@@ -308,6 +308,32 @@ If you have multiple music libraries in Navidrome:
 - **Find Library IDs**: Check your Navidrome admin interface or API documentation
 - **System Check**: The health check will show library configuration status
 
+## Authentication (Microsoft Entra ID)
+
+Magic Lists holds your Navidrome credentials and AI key **server-side**, so it
+must never be reachable anonymously once it's on the public internet. It ships
+with an optional Microsoft Entra ID (Azure AD) OIDC gate — the same login used by
+the other winterbottom.xyz apps (`stories`, `nutrition`, `asset-summary`), so one
+Azure app registration can be reused (just add this service's redirect URI).
+
+- The gate is **off by default** (`AUTH_DISABLED` unset ⇒ disabled), so a trusted
+  LAN / Tailscale deployment keeps working unchanged.
+- To require login, set `AUTH_DISABLED=false` **and** provide `AZURE_CLIENT_ID`,
+  `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID`, and a `SESSION_SECRET`; restrict who
+  may sign in with `ALLOWED_EMAILS`. With auth enabled but the credentials
+  missing, the app refuses to start rather than come up unprotected.
+- When enabled, **every** route requires a signed-in session except `/health`,
+  `/auth/*`, and the public PWA shell assets (`/static/*`, `/manifest.webmanifest`,
+  `/sw.js`, `/offline.html`). API calls without a session get a `401`; browsers are
+  redirected to the Microsoft login.
+
+See `.env.example` for the full list of variables.
+
+**Azure app registration:** add a *Web* redirect URI of
+`https://<your-subdomain>.winterbottom.xyz/auth/callback` and create a client
+secret. Reuse the existing winterbottom.xyz app registration (add the extra
+redirect URI) or create a dedicated one.
+
 ## License
 
 MIT License - see LICENSE file for details.
