@@ -1031,7 +1031,7 @@ async def get_rediscover_weekly_v2(library_ids: Optional[List[str]] = Query(None
         server_id = nav_client.base_url or "unknown_server"  # Use base URL as server identifier
 
         # Create ReDiscoverV2Processor instance
-        processor = ReDiscoverV2Processor(nav_client, ai_client, db)
+        processor = ReDiscoverV2Processor(nav_client, ai_client, db, get_lastfm_client())
 
         # Generate the playlist
         result = await processor.generate_playlist(user_id, server_id, library_ids)
@@ -1067,7 +1067,7 @@ async def create_rediscover_playlist_v2(
         server_id = nav_client.base_url or "unknown_server"
 
         # Create ReDiscoverV2Processor instance
-        processor = ReDiscoverV2Processor(nav_client, ai_client, db)
+        processor = ReDiscoverV2Processor(nav_client, ai_client, db, get_lastfm_client())
 
         # Generate the playlist
         playlist_data = await processor.generate_playlist(user_id, server_id, request.library_ids)
@@ -1467,7 +1467,7 @@ async def refresh_rediscover_playlist(scheduled_playlist, db: DatabaseManager, p
         server_id = nav_client.base_url or "unknown_server"
 
         # Create ReDiscoverV2Processor instance (improved fallback handling)
-        processor = ReDiscoverV2Processor(nav_client, ai_client, db)
+        processor = ReDiscoverV2Processor(nav_client, ai_client, db, get_lastfm_client())
 
         # Prepare library IDs for v2.0 processor
         library_ids = [scheduled_playlist.library_id] if hasattr(scheduled_playlist, 'library_id') and scheduled_playlist.library_id else None

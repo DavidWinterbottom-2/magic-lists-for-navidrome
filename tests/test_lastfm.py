@@ -13,7 +13,7 @@ import unittest
 
 from backend.lastfm_client import (
     LastfmClient, loved_key, mark_loved, normalise_name,
-    parse_loved_tracks, parse_similar_artists,
+    parse_loved_tracks, parse_similar_artists, parse_top_tracks,
 )
 
 
@@ -94,6 +94,25 @@ class TestParseSimilarArtists(unittest.TestCase):
         self.assertEqual(parse_similar_artists({"similarartists": {}}), [])
         data = {"similarartists": {"artist": [{"name": "  "}, {"name": "Real"}]}}
         self.assertEqual([r["name"] for r in parse_similar_artists(data)], ["Real"])
+
+
+class TestParseTopTracks(unittest.TestCase):
+    def test_parses_and_preserves_rank(self):
+        data = {"toptracks": {"track": [
+            {"name": "Hey Jude", "artist": {"name": "The Beatles"}, "playcount": "42"},
+            {"name": "Wonderwall", "artist": {"name": "Oasis"}, "playcount": "30"},
+        ]}}
+        rows = parse_top_tracks(data)
+        self.assertEqual([r["title"] for r in rows], ["Hey Jude", "Wonderwall"])
+        self.assertEqual(rows[0]["playcount"], "42")
+
+    def test_single_and_empty(self):
+        self.assertEqual(len(parse_top_tracks({"toptracks": {"track": {"name": "X", "artist": "Y"}}})), 1)
+        self.assertEqual(parse_top_tracks({"toptracks": {}}), [])
+
+    def test_nameless_rows_skipped(self):
+        data = {"toptracks": {"track": [{"name": "  ", "artist": "Y"}, {"name": "Real", "artist": "Y"}]}}
+        self.assertEqual([r["title"] for r in parse_top_tracks(data)], ["Real"])
 
 
 class TestNormaliseName(unittest.TestCase):

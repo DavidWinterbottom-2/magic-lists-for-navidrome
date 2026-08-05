@@ -6,6 +6,7 @@ from collections import defaultdict, Counter
 import json
 import random
 from .recipe_manager import recipe_manager
+from .lastfm_client import normalise_name
 
 
 class RediscoverWeekly:
@@ -474,10 +475,15 @@ class ReDiscoverV2Processor:
     for temporal analysis and two-phase AI collaboration.
     """
 
-    def __init__(self, navidrome_client, ai_client, db_manager):
+    def __init__(self, navidrome_client, ai_client, db_manager, lastfm_client=None):
         self.navidrome_client = navidrome_client
         self.ai_client = ai_client
         self.db = db_manager
+        # Optional Last.fm client. Re-Discover reads Navidrome's own `played`
+        # timestamps, so a listener who plays through another app (scrobbling to
+        # Last.fm) looks idle here and hits the fallback. When present, this lets
+        # the fallback draw on their real Last.fm listening instead.
+        self.lastfm_client = lastfm_client
         self.config = {
             "track_count": 25,
             "target_period_days_start": 90,
@@ -1012,8 +1018,107 @@ class ReDiscoverV2Processor:
         # For now, just log to console
         print(f"📊 V2 Playlist logged: {len(playlist_data['tracks'])} tracks, theme: {theme_strategy.get('theme_identified', 'Unknown')}, tracks analyzed: {tracks_analyzed}")
 
+    async def _resolve_lastfm_tracks(
+        self,
+        top: List[Dict[str, str]],
+        library_ids: Optional[List[str]],
+        needed: int
+    ) -> List[Dict[str, Any]]:
+        """Resolve ranked Last.fm (artist, title) rows to library tracks via search3.
+
+        Matches on a normalised (artist, title) key — the same folding used across
+        the Last.fm integration — dedupes by track id and stops once `needed` are
+        found. Rows that don't resolve are skipped: those are tracks the listener
+        played elsewhere but doesn't own, which belong in album suggestions, not a
+        library playlist. Rank order (most-played first) is preserved.
+        """
+        resolved: List[Dict[str, Any]] = []
+        seen_ids = set()
+
+        for row in top:
+            if len(resolved) >= needed:
+                break
+            title = (row.get("title") or "").strip()
+            artist = (row.get("artist") or "").strip()
+            if not title:
+                continue
+            want = (normalise_name(artist), normalise_name(title))
+            try:
+                matches = await self.navidrome_client.search_songs(
+                    f"{title} {artist}".strip(), count=10, library_ids=library_ids
+                )
+            except Exception:
+                continue
+            for match in matches:
+                if (normalise_name(match.get("artist")), normalise_name(match.get("title"))) == want:
+                    track_id = match.get("id")
+                    if track_id and track_id not in seen_ids:
+                        seen_ids.add(track_id)
+                        resolved.append(match)
+                    break
+
+        return resolved
+
+    async def _lastfm_top_tracks_fallback(
+        self,
+        user_id: str,
+        server_id: str,
+        library_ids: Optional[List[str]] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Build a Re-Discover playlist from the listener's Last.fm top tracks.
+
+        Returns None when Last.fm isn't configured, the lookup fails, or too few
+        top tracks resolve to the library — so the caller falls through to the
+        starred / most-played fallbacks unchanged.
+        """
+        client = self.lastfm_client
+        if not client or not getattr(client, "user_enabled", False):
+            return None
+
+        try:
+            top = await client.top_tracks(period="6month", limit=200)
+        except Exception as e:
+            print(f"⚠️ Last.fm top-tracks fallback failed: {e}")
+            return None
+
+        if not top:
+            return None
+
+        needed = self.config["track_count"]
+        resolved = await self._resolve_lastfm_tracks(top, library_ids, needed)
+
+        if len(resolved) < self.config["min_target_period_tracks"]:
+            print(f"⚠️ Last.fm fallback resolved only {len(resolved)} library tracks; skipping")
+            return None
+
+        print(f"🎧 Last.fm fallback: built from {len(resolved)} top tracks in the library")
+        return {
+            "name": "Re-Discover Weekly",
+            "tracks": [{
+                **track,
+                "ai_curated": False,
+                "ai_reasoning": "Fallback: your most-played Last.fm tracks that are in your library."
+            } for track in resolved[:needed]],
+            "theme": "Last.fm Favourites",
+            "mode": "LASTFM_FALLBACK",
+            "reasoning": (
+                "Not much recent in-app listening history, so this is built from the tracks "
+                "you've played most on Last.fm that you own — a rediscovery of your real favourites."
+            ),
+            "user_id": user_id,
+            "server_id": server_id,
+            "generated_at": datetime.now().isoformat(),
+            "is_fallback": True
+        }
+
     async def _trigger_fallback(self, user_id: str, server_id: str, library_ids: Optional[List[str]] = None) -> Dict[str, Any]:
         """Fallback strategy when insufficient target period tracks are found."""
+        # First choice: the listener's own Last.fm top tracks resolved to the
+        # library — a real re-discovery set even when in-app history is empty.
+        lastfm_playlist = await self._lastfm_top_tracks_fallback(user_id, server_id, library_ids)
+        if lastfm_playlist:
+            return lastfm_playlist
+
         try:
             # Try starred tracks approach
             starred_tracks = await self.navidrome_client.get_starred()

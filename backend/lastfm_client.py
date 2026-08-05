@@ -122,6 +122,31 @@ def parse_loved_tracks(data: Dict[str, Any]) -> List[Dict[str, str]]:
     return rows
 
 
+def parse_top_tracks(data: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Extract {artist, title, playcount} rows from a user.getTopTracks payload.
+
+    Rows arrive ranked most-played first, and that order is preserved. As with the
+    other endpoints, `track` may be a list, a bare object, or absent.
+    """
+    tracks = data.get("toptracks", {}).get("track", [])
+    if isinstance(tracks, dict):
+        tracks = [tracks]
+
+    rows: List[Dict[str, str]] = []
+    for entry in tracks:
+        artist = entry.get("artist", {})
+        artist_name = artist.get("name") if isinstance(artist, dict) else artist
+        title = (entry.get("name") or "").strip()
+        if not title:
+            continue
+        rows.append({
+            "artist": artist_name or "",
+            "title": title,
+            "playcount": str(entry.get("playcount") or ""),
+        })
+    return rows
+
+
 def mark_loved(tracks: List[Dict[str, Any]], loved_keys: Set[Tuple[str, str]]) -> int:
     """Flag tracks whose (artist, title) is in the loved set. Returns the count.
 
@@ -234,3 +259,21 @@ class LastfmClient:
             "autocorrect": 1,
         })
         return parse_similar_artists(data) if data else []
+
+    async def top_tracks(self, period: str = "6month", limit: int = 200) -> List[Dict[str, str]]:
+        """The listener's most-played tracks over `period`, ranked most-played first.
+
+        This is real cross-player listening history — the plays the listener made
+        anywhere that scrobbles, not just through Navidrome — which makes it a
+        strong "loved this once, drifted away" source for Re-Discover when the
+        in-app play history is thin. `period` is a Last.fm range (7day, 1month,
+        3month, 6month, 12month, overall). Returns [] when unconfigured or on error.
+        """
+        if not self.user_enabled:
+            return []
+        data = await self._get("user.getTopTracks", {
+            "user": self.username,
+            "period": period,
+            "limit": limit,
+        })
+        return parse_top_tracks(data) if data else []
