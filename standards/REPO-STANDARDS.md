@@ -1,6 +1,6 @@
 # REPO-STANDARDS
 
-**Version:** 1.13-seed · **Owner:** Hermes (self-hosted standards & skills agent)
+**Version:** 1.14-seed · **Owner:** Hermes (self-hosted standards & skills agent)
 
 > **Companion:** deployment-layer security — how a *hosted* service is exposed and how access
 > to it is controlled — lives in [`HOSTING-SECURITY.md`](HOSTING-SECURITY.md). This doc
@@ -276,9 +276,40 @@ they happen on cadence. The evidence is a **committed review log** the reviewer 
   `eslint.config.*`, `.prettierrc*`, …) **and** a CI job that runs the lint and format-check
   commands on every PR. Hermes flags a repo with source files but no CI lint/format gate.
 
+## §11 Usage analytics
+
+- Every winterbottom.xyz **web UI** should report anonymous usage to the shared self-hosted
+  **[Umami](https://umami.winterbottom.xyz)** — the same privacy-first, cookieless collector
+  the other apps use — so feature usage is visible without a third-party tracker. One Umami
+  **website per app**.
+- Analytics is wired through a fixed **env contract**, never hard-coded: the app reads
+  `ANALYTICS_SCRIPT_URL` and `ANALYTICS_WEBSITE_ID` from the environment and injects the Umami
+  `<script>` **only when both are set**. It is **off by default** and collects nothing until a
+  collector you run is configured (a half-configured pair is treated as off). `.env.example`
+  documents both knobs.
+- **First-party only.** A web UI must not ship a hard-coded or third-party analytics tag
+  (Google Analytics, a Meta Pixel, any hosted SDK). This is the repo-level face of the
+  deployment-layer rule in [`HOSTING-SECURITY.md`](HOSTING-SECURITY.md) **§H5** (self-hosted,
+  cookieless, first-party): at the repo level it means the env-gated contract above and no
+  hosted third-party tracker. Firm even where wiring Umami itself is optional.
+- **Checkable:** a repo that serves HTML injects the Umami tag via the
+  `ANALYTICS_SCRIPT_URL` / `ANALYTICS_WEBSITE_ID` contract (off by default) and carries no
+  hard-coded or third-party tracker. Hermes reviews a web UI against this and flags a
+  hard-coded/third-party tag or, informationally, one that wires no analytics at all — the
+  `has_analytics` signal, mirroring §8's `has_web_ui`. `docker-infra` owns the collector and
+  is exempt.
+
 ---
 
 ## Change log
+
+- **2026-08-04 — v1.14-seed.** Added **§11 Usage analytics**: every web UI should report
+  anonymous usage to the shared self-hosted **Umami** through a fixed, **off-by-default** env
+  contract (`ANALYTICS_SCRIPT_URL` + `ANALYTICS_WEBSITE_ID`), one website per app — and **must
+  not** ship a hard-coded or third-party analytics tag. Reviewed against web-UI repos (the
+  `has_analytics` signal, mirroring §8's `has_web_ui`) the deployment-layer
+  companion is `HOSTING-SECURITY.md` §H5, and it is paired with the app-side analytics
+  wiring already shipped across the winterbottom apps.
 
 - **2026-07-27 — v1.13-seed.** Added a companion standard, **[`HOSTING-SECURITY.md`](HOSTING-SECURITY.md)**,
   for the **deployment layer** — how a *hosted* service is exposed and how access to it is
