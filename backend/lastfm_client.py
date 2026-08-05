@@ -132,6 +132,8 @@ def mark_loved(tracks: List[Dict[str, Any]], loved_keys: Set[Tuple[str, str]]) -
         return 0
     marked = 0
     for track in tracks:
+        if track.get("loved"):
+            continue  # already loved (e.g. via a Navidrome star) — don't recount
         key = loved_key(track.get("artist"), track.get("title"))
         if key in loved_keys:
             track["loved"] = True

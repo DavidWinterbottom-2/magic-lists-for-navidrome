@@ -52,7 +52,7 @@ from .radio import (
     RadioProcessor, build_shortfall, cap_seed_artist, count_distinct_artists,
     lidarr_add_url, promote_seed_first
 )
-from .track_scoring import filter_tracks_for_this_is_playlist
+from .track_scoring import filter_tracks_for_this_is_playlist, mark_starred_loved
 from .lastfm_client import LastfmClient, mark_loved
 # SYSTEM CHECK FEATURE - START
 from .services.health_check_service import HealthCheckService
@@ -333,19 +333,26 @@ def get_lastfm_client():
 
 
 async def apply_loved_signal(tracks):
-    """Mark candidate tracks the listener has loved on Last.fm, in place.
+    """Mark the listener's favourites in place, lighting up scoring's +50 bonus.
 
-    Lights up the +50 "loved" bonus in engagement scoring, which nothing else in
-    the app populates. A no-op when Last.fm isn't configured (or the profile hides
-    its data), so every caller keeps its existing behaviour unchanged.
+    Two sources feed `track['loved']`, which nothing else in the app populates:
+      1. Navidrome's own star (`local_library_likes`) — the listener's real
+         favourites, including any hearted from a client like Amperfy. Always
+         applied; needs no configuration.
+      2. Last.fm loved tracks — loves made directly on Last.fm. Applied only when
+         Last.fm is configured, since Navidrome doesn't sync its star to Last.fm.
     """
+    starred = mark_starred_loved(tracks)
+    if starred:
+        scheduler_logger.info(f"❤️ Marked {starred} starred track(s) as loved")
+
     client = get_lastfm_client()
     if not client.user_enabled:
         return
     loved_keys = await client.loved_track_keys()
     marked = mark_loved(tracks, loved_keys)
     if marked:
-        scheduler_logger.info(f"❤️ Last.fm: marked {marked} loved track(s) in candidate pool")
+        scheduler_logger.info(f"❤️ Last.fm: marked {marked} further loved track(s) in candidate pool")
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):

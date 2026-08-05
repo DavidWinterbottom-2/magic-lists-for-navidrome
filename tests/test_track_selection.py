@@ -16,6 +16,7 @@ from backend.track_scoring import (
     FULL_ENGAGEMENT_COVERAGE,
     effective_library_stats,
     filter_tracks_for_this_is_playlist,
+    mark_starred_loved,
     measure_play_coverage,
     select_with_tiebreak,
 )
@@ -24,6 +25,30 @@ from backend.track_scoring import (
 def _track(tid, play_count=0):
     return {"id": tid, "title": f"T{tid}", "artist": "A", "album": "B",
             "play_count": play_count}
+
+
+class MarkStarredLovedTests(unittest.TestCase):
+
+    def test_starred_track_becomes_loved(self):
+        tracks = [
+            {"id": "1", "local_library_likes": True},
+            {"id": "2", "local_library_likes": False},
+            {"id": "3", "starred": "2024-01-01T00:00:00Z"},
+        ]
+        marked = mark_starred_loved(tracks)
+        self.assertEqual(marked, 2)
+        self.assertTrue(tracks[0]["loved"])
+        self.assertNotIn("loved", tracks[1])
+        self.assertTrue(tracks[2]["loved"])
+
+    def test_already_loved_is_not_recounted(self):
+        tracks = [{"id": "1", "loved": True, "local_library_likes": True}]
+        self.assertEqual(mark_starred_loved(tracks), 0)
+        self.assertTrue(tracks[0]["loved"])
+
+    def test_no_favourites_is_a_noop(self):
+        tracks = [{"id": "1"}, {"id": "2", "local_library_likes": False}]
+        self.assertEqual(mark_starred_loved(tracks), 0)
 
 
 class PlayCoverageTests(unittest.TestCase):
