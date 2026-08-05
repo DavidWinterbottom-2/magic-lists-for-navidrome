@@ -64,6 +64,17 @@ class FakeNav:
         return list(self.artists)
 
 
+class FakeLastfm:
+    """Minimal stand-in for LastfmClient's similar-artist surface."""
+
+    def __init__(self, similar_by_artist=None, enabled=True):
+        self.enabled = enabled
+        self.similar_by_artist = similar_by_artist or {}  # artist_name -> [{name, match}]
+
+    async def similar_artists(self, artist_name, limit=40):
+        return list(self.similar_by_artist.get(artist_name, []))
+
+
 class FakeProvider:
     """Stand-in AI provider returning a canned response string."""
 
@@ -107,6 +118,29 @@ class RadioProcessorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(ids), len(set(ids)), "pool must be de-duplicated")
         self.assertIn("t3", ids, "similar-artist tracks should be included")
         self.assertEqual(sorted(ids), ["t1", "t2", "t3"])
+
+    async def test_out_of_library_artists_excludes_owned_and_keeps_rank(self):
+        # Library owns "Massive Attack" (under a differently-cased/accented tag);
+        # the ranked Last.fm suggestions should drop it and keep the rest in order.
+        nav = FakeNav(artists=[{"id": "A1", "name": "Alpha"}, {"id": "A9", "name": "massive attack"}])
+        lastfm = FakeLastfm(similar_by_artist={"Alpha": [
+            {"name": "Portishead", "match": "1.0"},
+            {"name": "Massive Attack", "match": "0.9"},
+            {"name": "Tricky", "match": "0.8"},
+        ]})
+        proc = RadioProcessor(nav, lastfm)
+        seed = {"type": "artist", "id": "A1", "name": "Alpha",
+                "artist_id": "A1", "artist_name": "Alpha", "genre": None}
+
+        result = await proc.similar_out_of_library_artists(seed, limit=8)
+        self.assertEqual([r["name"] for r in result], ["Portishead", "Tricky"])
+
+    async def test_out_of_library_artists_empty_without_lastfm(self):
+        nav = FakeNav(artists=[{"id": "A1", "name": "Alpha"}])
+        proc = RadioProcessor(nav)  # no Last.fm client
+        seed = {"type": "artist", "id": "A1", "name": "Alpha",
+                "artist_id": "A1", "artist_name": "Alpha", "genre": None}
+        self.assertEqual(await proc.similar_out_of_library_artists(seed), [])
 
     async def test_similar_songs_are_the_primary_pool(self):
         # getSimilarSongs2 returns a rich, library-resident pool in one call;

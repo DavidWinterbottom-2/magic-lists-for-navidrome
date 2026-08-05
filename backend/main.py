@@ -52,7 +52,8 @@ from .radio import (
     RadioProcessor, build_shortfall, cap_seed_artist, count_distinct_artists,
     lidarr_add_url, promote_seed_first
 )
-from .track_scoring import filter_tracks_for_this_is_playlist
+from .track_scoring import filter_tracks_for_this_is_playlist, mark_starred_loved
+from .lastfm_client import LastfmClient, mark_loved
 # SYSTEM CHECK FEATURE - START
 from .services.health_check_service import HealthCheckService
 # SYSTEM CHECK FEATURE - END
@@ -300,6 +301,7 @@ def song_labels(songs) -> list:
 # Initialize clients (lazy loading)
 navidrome_client = None
 ai_client = None
+lastfm_client = None
 
 # Initialize scheduler (will be started on app startup)
 scheduler = None
@@ -321,6 +323,36 @@ def get_ai_client():
     if ai_client is None:
         ai_client = AIClient()
     return ai_client
+
+
+def get_lastfm_client():
+    global lastfm_client
+    if lastfm_client is None:
+        lastfm_client = LastfmClient()
+    return lastfm_client
+
+
+async def apply_loved_signal(tracks):
+    """Mark the listener's favourites in place, lighting up scoring's +50 bonus.
+
+    Two sources feed `track['loved']`, which nothing else in the app populates:
+      1. Navidrome's own star (`local_library_likes`) — the listener's real
+         favourites, including any hearted from a client like Amperfy. Always
+         applied; needs no configuration.
+      2. Last.fm loved tracks — loves made directly on Last.fm. Applied only when
+         Last.fm is configured, since Navidrome doesn't sync its star to Last.fm.
+    """
+    starred = mark_starred_loved(tracks)
+    if starred:
+        scheduler_logger.info(f"❤️ Marked {starred} starred track(s) as loved")
+
+    client = get_lastfm_client()
+    if not client.user_enabled:
+        return
+    loved_keys = await client.loved_track_keys()
+    marked = mark_loved(tracks, loved_keys)
+    if marked:
+        scheduler_logger.info(f"❤️ Last.fm: marked {marked} further loved track(s) in candidate pool")
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
@@ -487,7 +519,8 @@ async def create_playlist(
         
         # NEW: Apply smart filtering for "This Is" playlists to optimize LLM payload
         library_stats = await nav_client.get_library_stats()
-        
+        await apply_loved_signal(all_tracks)
+
         filtered_tracks, filter_metadata = filter_tracks_for_this_is_playlist(
             source_tracks=all_tracks,
             target_playlist_size=request.playlist_length,
@@ -688,6 +721,7 @@ async def create_genre_playlist(
 
         # NEW: Apply smart filtering for "Genre Mix" playlists to optimize LLM payload
         library_stats = await nav_client.get_library_stats()
+        await apply_loved_signal(all_tracks)
 
         filtered_tracks, filter_metadata = filter_tracks_for_this_is_playlist(
             source_tracks=all_tracks,
@@ -802,7 +836,7 @@ async def create_radio_playlist(
             raise HTTPException(status_code=400, detail="seed_type must be 'artist' or 'song'")
 
         # Resolve the seed and gather candidate tracks
-        processor = RadioProcessor(nav_client)
+        processor = RadioProcessor(nav_client, get_lastfm_client())
         try:
             seed = await processor.resolve_seed(request.seed_type, request.seed_id, request.library_ids)
         except Exception as e:
@@ -816,6 +850,7 @@ async def create_radio_playlist(
 
         # Smart-filter to keep the LLM payload manageable (reuses engagement scoring)
         library_stats = await nav_client.get_library_stats()
+        await apply_loved_signal(candidate_tracks)
         filtered_tracks, filter_metadata = filter_tracks_for_this_is_playlist(
             source_tracks=candidate_tracks,
             target_playlist_size=request.playlist_length,
@@ -824,12 +859,21 @@ async def create_radio_playlist(
         if filter_metadata['filtered']:
             scheduler_logger.info(f"🎯 Radio smart filtering: {filter_metadata['source_count']} → {filter_metadata['sent_count']} tracks")
 
+        # Ground album suggestions in real Last.fm similar artists the listener
+        # doesn't own (empty when Last.fm isn't configured — model falls back to
+        # its own knowledge, as before).
+        album_artists = [
+            artist["name"]
+            for artist in await processor.similar_out_of_library_artists(seed, request.library_ids)
+        ]
+
         # AI curation (returns tracks, reasoning, and album suggestions)
         curated_track_ids, reasoning, album_suggestions = await ai_client_instance.curate_radio(
             seed_name=seed["name"],
             tracks_json=filtered_tracks,
             num_tracks=request.playlist_length,
-            include_reasoning=True
+            include_reasoning=True,
+            preferred_album_artists=album_artists
         )
 
         if not curated_track_ids:
@@ -987,7 +1031,7 @@ async def get_rediscover_weekly_v2(library_ids: Optional[List[str]] = Query(None
         server_id = nav_client.base_url or "unknown_server"  # Use base URL as server identifier
 
         # Create ReDiscoverV2Processor instance
-        processor = ReDiscoverV2Processor(nav_client, ai_client, db)
+        processor = ReDiscoverV2Processor(nav_client, ai_client, db, get_lastfm_client())
 
         # Generate the playlist
         result = await processor.generate_playlist(user_id, server_id, library_ids)
@@ -1023,7 +1067,7 @@ async def create_rediscover_playlist_v2(
         server_id = nav_client.base_url or "unknown_server"
 
         # Create ReDiscoverV2Processor instance
-        processor = ReDiscoverV2Processor(nav_client, ai_client, db)
+        processor = ReDiscoverV2Processor(nav_client, ai_client, db, get_lastfm_client())
 
         # Generate the playlist
         playlist_data = await processor.generate_playlist(user_id, server_id, request.library_ids)
@@ -1423,7 +1467,7 @@ async def refresh_rediscover_playlist(scheduled_playlist, db: DatabaseManager, p
         server_id = nav_client.base_url or "unknown_server"
 
         # Create ReDiscoverV2Processor instance (improved fallback handling)
-        processor = ReDiscoverV2Processor(nav_client, ai_client, db)
+        processor = ReDiscoverV2Processor(nav_client, ai_client, db, get_lastfm_client())
 
         # Prepare library IDs for v2.0 processor
         library_ids = [scheduled_playlist.library_id] if hasattr(scheduled_playlist, 'library_id') and scheduled_playlist.library_id else None
@@ -1641,7 +1685,7 @@ async def refresh_radio_playlist(scheduled_playlist, db: DatabaseManager, propag
         original_length = original_playlist.get("playlist_length", 25)
 
         # Resolve seed and gather fresh candidates
-        processor = RadioProcessor(nav_client)
+        processor = RadioProcessor(nav_client, get_lastfm_client())
         seed = await processor.resolve_seed(seed_type, seed_id, library_ids)
         candidate_tracks = await processor.gather_candidate_tracks(seed, library_ids)
         if not candidate_tracks:
@@ -1649,6 +1693,7 @@ async def refresh_radio_playlist(scheduled_playlist, db: DatabaseManager, propag
             return
 
         library_stats = await nav_client.get_library_stats()
+        await apply_loved_signal(candidate_tracks)
         filtered_tracks, _ = filter_tracks_for_this_is_playlist(
             source_tracks=candidate_tracks,
             target_playlist_size=original_length,
@@ -1662,12 +1707,18 @@ async def refresh_radio_playlist(scheduled_playlist, db: DatabaseManager, propag
             f"Keep it on-theme but vary the selection and ordering for a fresh listen."
         ) if previous_songs else ""
 
+        album_artists = [
+            artist["name"]
+            for artist in await processor.similar_out_of_library_artists(seed, library_ids)
+        ]
+
         curated_track_ids, reasoning, album_suggestions = await ai_client_instance.curate_radio(
             seed_name=seed["name"],
             tracks_json=filtered_tracks,
             num_tracks=original_length,
             include_reasoning=True,
-            variety_context=variety_instruction
+            variety_context=variety_instruction,
+            preferred_album_artists=album_artists
         )
 
         if not curated_track_ids:
