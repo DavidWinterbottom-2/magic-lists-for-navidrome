@@ -829,7 +829,7 @@ async def create_radio_playlist(
             raise HTTPException(status_code=400, detail="seed_type must be 'artist' or 'song'")
 
         # Resolve the seed and gather candidate tracks
-        processor = RadioProcessor(nav_client)
+        processor = RadioProcessor(nav_client, get_lastfm_client())
         try:
             seed = await processor.resolve_seed(request.seed_type, request.seed_id, request.library_ids)
         except Exception as e:
@@ -852,12 +852,21 @@ async def create_radio_playlist(
         if filter_metadata['filtered']:
             scheduler_logger.info(f"🎯 Radio smart filtering: {filter_metadata['source_count']} → {filter_metadata['sent_count']} tracks")
 
+        # Ground album suggestions in real Last.fm similar artists the listener
+        # doesn't own (empty when Last.fm isn't configured — model falls back to
+        # its own knowledge, as before).
+        album_artists = [
+            artist["name"]
+            for artist in await processor.similar_out_of_library_artists(seed, request.library_ids)
+        ]
+
         # AI curation (returns tracks, reasoning, and album suggestions)
         curated_track_ids, reasoning, album_suggestions = await ai_client_instance.curate_radio(
             seed_name=seed["name"],
             tracks_json=filtered_tracks,
             num_tracks=request.playlist_length,
-            include_reasoning=True
+            include_reasoning=True,
+            preferred_album_artists=album_artists
         )
 
         if not curated_track_ids:
@@ -1669,7 +1678,7 @@ async def refresh_radio_playlist(scheduled_playlist, db: DatabaseManager, propag
         original_length = original_playlist.get("playlist_length", 25)
 
         # Resolve seed and gather fresh candidates
-        processor = RadioProcessor(nav_client)
+        processor = RadioProcessor(nav_client, get_lastfm_client())
         seed = await processor.resolve_seed(seed_type, seed_id, library_ids)
         candidate_tracks = await processor.gather_candidate_tracks(seed, library_ids)
         if not candidate_tracks:
@@ -1691,12 +1700,18 @@ async def refresh_radio_playlist(scheduled_playlist, db: DatabaseManager, propag
             f"Keep it on-theme but vary the selection and ordering for a fresh listen."
         ) if previous_songs else ""
 
+        album_artists = [
+            artist["name"]
+            for artist in await processor.similar_out_of_library_artists(seed, library_ids)
+        ]
+
         curated_track_ids, reasoning, album_suggestions = await ai_client_instance.curate_radio(
             seed_name=seed["name"],
             tracks_json=filtered_tracks,
             num_tracks=original_length,
             include_reasoning=True,
-            variety_context=variety_instruction
+            variety_context=variety_instruction,
+            preferred_album_artists=album_artists
         )
 
         if not curated_track_ids:

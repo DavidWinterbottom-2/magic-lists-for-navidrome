@@ -12,7 +12,8 @@ import os
 import unittest
 
 from backend.lastfm_client import (
-    LastfmClient, loved_key, mark_loved, parse_loved_tracks,
+    LastfmClient, loved_key, mark_loved, normalise_name,
+    parse_loved_tracks, parse_similar_artists,
 )
 
 
@@ -73,6 +74,35 @@ class TestMarkLoved(unittest.TestCase):
         tracks = self._tracks()
         self.assertEqual(mark_loved(tracks, set()), 0)
         self.assertNotIn("loved", tracks[0])
+
+
+class TestParseSimilarArtists(unittest.TestCase):
+    def test_parses_and_preserves_rank_order(self):
+        data = {"similarartists": {"artist": [
+            {"name": "Portishead", "mbid": "m1", "match": "1.0"},
+            {"name": "Massive Attack", "mbid": "", "match": "0.8"},
+        ]}}
+        rows = parse_similar_artists(data)
+        self.assertEqual([r["name"] for r in rows], ["Portishead", "Massive Attack"])
+        self.assertEqual(rows[0]["match"], "1.0")
+
+    def test_single_artist_object(self):
+        data = {"similarartists": {"artist": {"name": "Portishead", "match": "1.0"}}}
+        self.assertEqual(len(parse_similar_artists(data)), 1)
+
+    def test_none_and_nameless_skipped(self):
+        self.assertEqual(parse_similar_artists({"similarartists": {}}), [])
+        data = {"similarartists": {"artist": [{"name": "  "}, {"name": "Real"}]}}
+        self.assertEqual([r["name"] for r in parse_similar_artists(data)], ["Real"])
+
+
+class TestNormaliseName(unittest.TestCase):
+    def test_matches_across_articles_and_accents(self):
+        self.assertEqual(normalise_name("The Beatles"), normalise_name("beatles"))
+        self.assertEqual(normalise_name("Sigur Rós"), normalise_name("sigur ros"))
+
+    def test_distinct_names_stay_distinct(self):
+        self.assertNotEqual(normalise_name("Oasis"), normalise_name("Blur"))
 
 
 class TestEnabledGates(unittest.TestCase):

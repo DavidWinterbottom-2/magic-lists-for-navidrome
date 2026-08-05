@@ -39,6 +39,8 @@ LASTFM_API_ROOT = "https://ws.audioscrobbler.com/2.0/"
 LOVED_CACHE_TTL_SECONDS = 6 * 60 * 60
 # Last.fm allows up to 1000 results per page; one page is plenty for matching.
 LOVED_PAGE_LIMIT = 1000
+# How many ranked similar artists to request for album-suggestion grounding.
+SIMILAR_ARTIST_LIMIT = 40
 
 _LEADING_ARTICLE = re.compile(r"^(the|a|an)\s+", re.IGNORECASE)
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
@@ -63,6 +65,39 @@ def _normalise(value: Optional[str]) -> str:
 def loved_key(artist: Optional[str], title: Optional[str]) -> Tuple[str, str]:
     """A normalised (artist, title) pair used to match tracks across sources."""
     return (_normalise(artist), _normalise(title))
+
+
+def normalise_name(name: Optional[str]) -> str:
+    """Fold an artist name to a match key (see `_normalise`).
+
+    Exposed so callers can test a Last.fm artist name against the local library
+    with the same case/article/accent folding used for loved-track matching.
+    """
+    return _normalise(name)
+
+
+def parse_similar_artists(data: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Extract {name, mbid, match} rows from an artist.getSimilar payload.
+
+    `match` is Last.fm's 0–1 similarity score as a string; rows arrive already
+    ranked most-similar first, and that order is preserved here. As elsewhere the
+    `artist` list may be a bare object for a single result or absent for none.
+    """
+    similar = data.get("similarartists", {}).get("artist", [])
+    if isinstance(similar, dict):
+        similar = [similar]
+
+    rows: List[Dict[str, str]] = []
+    for entry in similar:
+        name = (entry.get("name") or "").strip()
+        if not name:
+            continue
+        rows.append({
+            "name": name,
+            "mbid": entry.get("mbid") or "",
+            "match": str(entry.get("match") or ""),
+        })
+    return rows
 
 
 def parse_loved_tracks(data: Dict[str, Any]) -> List[Dict[str, str]]:
@@ -180,3 +215,20 @@ class LastfmClient:
 
         self._loved_cache = (keys, time.monotonic() + LOVED_CACHE_TTL_SECONDS)
         return keys
+
+    async def similar_artists(self, artist_name: str, limit: int = SIMILAR_ARTIST_LIMIT) -> List[Dict[str, str]]:
+        """Artists similar to `artist_name`, ranked most-similar first.
+
+        Unlike Navidrome's getArtistInfo2 — which drops every suggestion not in
+        the local library — this returns Last.fm's full ranked list, including the
+        out-of-library artists that make good album suggestions. Needs only the
+        API key (no username). Returns [] when unconfigured or on any failure.
+        """
+        if not self.enabled or not (artist_name or "").strip():
+            return []
+        data = await self._get("artist.getSimilar", {
+            "artist": artist_name,
+            "limit": limit,
+            "autocorrect": 1,
+        })
+        return parse_similar_artists(data) if data else []

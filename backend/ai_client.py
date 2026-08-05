@@ -1015,7 +1015,8 @@ Return JSON: {{"track_ids": [indices], "reasoning": "summary"}}"""
         tracks_json: List[Dict[str, Any]],
         num_tracks: int = 25,
         include_reasoning: bool = True,
-        variety_context: Optional[str] = None
+        variety_context: Optional[str] = None,
+        preferred_album_artists: Optional[List[str]] = None
     ) -> Tuple[List[str], str, List[Dict[str, Any]]]:
         """Curate a 'Radio' playlist seeded from an artist or song using AI.
 
@@ -1083,7 +1084,21 @@ Return JSON: {{"track_ids": [indices], "reasoning": "summary"}}"""
             print(f"🔢 Using index-based approach for {len(track_id_map)} tracks")
 
             variety_note = f"\n\n{variety_context}" if variety_context else ""
-            user_content = f"""Build a "{seed_name} Radio" station of up to {num_tracks} tracks from the candidates below, and suggest similar-style albums NOT in the library.{variety_note}
+
+            # Ground album suggestions in Last.fm's similar-artist data when we have
+            # it: these artists genuinely fit the seed and are confirmed absent from
+            # the library, so the model picks a real album by them rather than
+            # inventing an artist from memory.
+            album_note = ""
+            if preferred_album_artists:
+                artist_list = ", ".join(preferred_album_artists)
+                album_note = (
+                    f"\n\nFor album_suggestions, prefer these artists — similar to the seed "
+                    f"(per Last.fm) and confirmed NOT in the library: {artist_list}. "
+                    f"Pick one real, well-known album by each artist you suggest; do not invent releases."
+                )
+
+            user_content = f"""Build a "{seed_name} Radio" station of up to {num_tracks} tracks from the candidates below, and suggest similar-style albums NOT in the library.{variety_note}{album_note}
 
 Tracks: {json.dumps(indexed_tracks, separators=(',', ':'), ensure_ascii=False)}
 

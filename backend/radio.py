@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote_plus
 
 from .errors import describe_exception
+from .lastfm_client import normalise_name
 
 logger = logging.getLogger("scheduler")
 
@@ -322,8 +323,11 @@ def enforce_artist_cap(
 class RadioProcessor:
     """Resolves a radio seed and gathers similar-style candidate tracks."""
 
-    def __init__(self, nav_client):
+    def __init__(self, nav_client, lastfm_client=None):
         self.nav_client = nav_client
+        # Optional Last.fm client. When present, its similar-artist graph grounds
+        # the album suggestions in real data rather than the model's own guesses.
+        self.lastfm_client = lastfm_client
         # Recall failures that degraded the pool. Each step below is allowed to
         # fail so a station can still be built, but a station built from a
         # fallback is a materially worse station and the listener should be told
@@ -466,6 +470,63 @@ class RadioProcessor:
             f"({len(similar_artists)} similar artists) for seed '{seed.get('name')}'"
         )
         return candidates[:MAX_CANDIDATE_TRACKS]
+
+    async def similar_out_of_library_artists(
+        self,
+        seed: Dict[str, Any],
+        library_ids: Optional[List[str]] = None,
+        limit: int = 8
+    ) -> List[Dict[str, str]]:
+        """Ranked, fitting artists the listener does NOT own, from Last.fm.
+
+        Radio's album-suggestion feature exists to point at gaps in the library —
+        "artists like the seed that you don't have yet". Left to itself the model
+        invents those names from memory; grounding them in Last.fm's similar-artist
+        graph (minus whatever is already in the library) makes the suggestions real
+        and genuinely absent. Returns the top `limit` by Last.fm similarity.
+
+        Returns [] when Last.fm isn't configured or any lookup fails — the curator
+        then falls back to suggesting albums from its own knowledge, as before.
+        """
+        client = self.lastfm_client
+        if not client or not getattr(client, "enabled", False):
+            return []
+
+        seed_artist = seed.get("artist_name")
+        if not seed_artist:
+            return []
+
+        try:
+            similar = await client.similar_artists(seed_artist)
+        except Exception as e:
+            reason = describe_exception(e)
+            logger.warning(f"⚠️ Radio: Last.fm similar-artist lookup failed: {reason}")
+            self.pool_warnings.append(f"The Last.fm album-suggestion lookup failed ({reason}).")
+            return []
+
+        if not similar:
+            return []
+
+        # Fold every library artist name to the same match key, then keep only the
+        # Last.fm suggestions that don't collide — those are the genuine gaps.
+        try:
+            library_artists = await self.nav_client.get_artists(library_ids)
+        except Exception as e:
+            logger.warning(f"⚠️ Radio: could not load library artists for suggestion filtering: {e}")
+            return []
+
+        owned = {normalise_name(a.get("name")) for a in library_artists}
+        out_of_library = [
+            {"name": row["name"], "match": row.get("match", "")}
+            for row in similar
+            if normalise_name(row["name"]) not in owned
+        ]
+
+        logger.info(
+            f"📻 Radio: {len(out_of_library)} of {len(similar)} Last.fm similar artists "
+            f"are outside the library (top {limit} used for album suggestions)"
+        )
+        return out_of_library[:limit]
 
     @staticmethod
     def _most_common_genre(tracks: List[Dict[str, Any]]) -> Optional[str]:
