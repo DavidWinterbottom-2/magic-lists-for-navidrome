@@ -53,6 +53,7 @@ from .radio import (
     lidarr_add_url, promote_seed_first
 )
 from .track_scoring import filter_tracks_for_this_is_playlist
+from .lastfm_client import LastfmClient, mark_loved
 # SYSTEM CHECK FEATURE - START
 from .services.health_check_service import HealthCheckService
 # SYSTEM CHECK FEATURE - END
@@ -300,6 +301,7 @@ def song_labels(songs) -> list:
 # Initialize clients (lazy loading)
 navidrome_client = None
 ai_client = None
+lastfm_client = None
 
 # Initialize scheduler (will be started on app startup)
 scheduler = None
@@ -321,6 +323,29 @@ def get_ai_client():
     if ai_client is None:
         ai_client = AIClient()
     return ai_client
+
+
+def get_lastfm_client():
+    global lastfm_client
+    if lastfm_client is None:
+        lastfm_client = LastfmClient()
+    return lastfm_client
+
+
+async def apply_loved_signal(tracks):
+    """Mark candidate tracks the listener has loved on Last.fm, in place.
+
+    Lights up the +50 "loved" bonus in engagement scoring, which nothing else in
+    the app populates. A no-op when Last.fm isn't configured (or the profile hides
+    its data), so every caller keeps its existing behaviour unchanged.
+    """
+    client = get_lastfm_client()
+    if not client.user_enabled:
+        return
+    loved_keys = await client.loved_track_keys()
+    marked = mark_loved(tracks, loved_keys)
+    if marked:
+        scheduler_logger.info(f"❤️ Last.fm: marked {marked} loved track(s) in candidate pool")
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
@@ -487,7 +512,8 @@ async def create_playlist(
         
         # NEW: Apply smart filtering for "This Is" playlists to optimize LLM payload
         library_stats = await nav_client.get_library_stats()
-        
+        await apply_loved_signal(all_tracks)
+
         filtered_tracks, filter_metadata = filter_tracks_for_this_is_playlist(
             source_tracks=all_tracks,
             target_playlist_size=request.playlist_length,
@@ -688,6 +714,7 @@ async def create_genre_playlist(
 
         # NEW: Apply smart filtering for "Genre Mix" playlists to optimize LLM payload
         library_stats = await nav_client.get_library_stats()
+        await apply_loved_signal(all_tracks)
 
         filtered_tracks, filter_metadata = filter_tracks_for_this_is_playlist(
             source_tracks=all_tracks,
@@ -816,6 +843,7 @@ async def create_radio_playlist(
 
         # Smart-filter to keep the LLM payload manageable (reuses engagement scoring)
         library_stats = await nav_client.get_library_stats()
+        await apply_loved_signal(candidate_tracks)
         filtered_tracks, filter_metadata = filter_tracks_for_this_is_playlist(
             source_tracks=candidate_tracks,
             target_playlist_size=request.playlist_length,
@@ -1649,6 +1677,7 @@ async def refresh_radio_playlist(scheduled_playlist, db: DatabaseManager, propag
             return
 
         library_stats = await nav_client.get_library_stats()
+        await apply_loved_signal(candidate_tracks)
         filtered_tracks, _ = filter_tracks_for_this_is_playlist(
             source_tracks=candidate_tracks,
             target_playlist_size=original_length,
