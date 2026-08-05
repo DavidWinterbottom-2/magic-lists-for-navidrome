@@ -54,7 +54,12 @@ class HealthCheckService:
         library_check = await self._check_navidrome_library_config()
         checks.append(library_check)
         # Library config is informational only, don't fail on it
-            
+
+        # Last.fm is an optional integration; surface its status but never fail
+        # the overall check on it — the app works fully without it.
+        lastfm_check = await self._check_lastfm()
+        checks.append(lastfm_check)
+
         # Track Umami events
         await self._track_umami_events(all_passed, checks)
         
@@ -618,6 +623,88 @@ class HealthCheckService:
                 "suggestion": "API key is configured but service connectivity could not be verified"
             }
     
+    async def _check_lastfm(self) -> Dict[str, str]:
+        """Check the optional Last.fm integration configuration and connectivity.
+
+        Last.fm is opt-in and the app works fully without it, so a missing or
+        broken configuration never fails the overall system check — it surfaces
+        as info/warning so the listener can see at a glance whether the
+        loved-track boost, grounded Radio album suggestions and Re-Discover
+        top-tracks fallback are actually live.
+        """
+        api_key = os.getenv("LASTFM_API_KEY", "").strip()
+        username = os.getenv("LASTFM_USERNAME", "").strip()
+
+        if not api_key:
+            return {
+                "name": "Last.fm Integration",
+                "status": "info",
+                "message": "Not configured — the loved-track boost, grounded Radio album suggestions and Re-Discover top-tracks fallback are off (all optional).",
+                "suggestion": "To enable them, set LASTFM_API_KEY and LASTFM_USERNAME in your .env file. Create a key at https://www.last.fm/api/account/create"
+            }
+
+        if not username:
+            return {
+                "name": "Last.fm Integration",
+                "status": "warning",
+                "message": "LASTFM_API_KEY is set but LASTFM_USERNAME is not — Radio album suggestions can use Last.fm, but your loved and top tracks can't be read.",
+                "suggestion": "Set LASTFM_USERNAME in your .env file to enable the loved-track boost and the Re-Discover top-tracks fallback."
+            }
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(
+                    "https://ws.audioscrobbler.com/2.0/",
+                    params={
+                        "method": "user.getInfo",
+                        "user": username,
+                        "api_key": api_key,
+                        "format": "json"
+                    }
+                )
+            data = response.json()
+            error_code = data.get("error")
+
+            # Last.fm error codes: 10 = invalid API key, 6 = user not found.
+            if error_code == 10:
+                return {
+                    "name": "Last.fm Integration",
+                    "status": "warning",
+                    "message": "LASTFM_API_KEY is invalid — Last.fm features will stay off.",
+                    "suggestion": "Check LASTFM_API_KEY in your .env file, or create a new key at https://www.last.fm/api/account/create"
+                }
+            if error_code == 6:
+                return {
+                    "name": "Last.fm Integration",
+                    "status": "warning",
+                    "message": f"Last.fm user '{username}' was not found.",
+                    "suggestion": "Check LASTFM_USERNAME in your .env file — it should be your Last.fm handle, not your email address."
+                }
+            if error_code:
+                return {
+                    "name": "Last.fm Integration",
+                    "status": "warning",
+                    "message": f"Last.fm returned error {error_code}: {data.get('message', 'unknown error')}",
+                    "suggestion": "Check your LASTFM_API_KEY and LASTFM_USERNAME in your .env file."
+                }
+
+            playcount = str(data.get("user", {}).get("playcount", "")).strip()
+            scrobbles = f" ({playcount} scrobbles)" if playcount else ""
+            return {
+                "name": "Last.fm Integration",
+                "status": "success",
+                "message": f"Connected as '{username}'{scrobbles}. Loved-track boost, grounded Radio suggestions and the Re-Discover fallback are active.",
+                "suggestion": "If your loved or top tracks look empty, make sure Settings → Privacy → 'Hide recent listening information' is off on Last.fm."
+            }
+
+        except Exception as e:
+            return {
+                "name": "Last.fm Integration",
+                "status": "warning",
+                "message": f"Last.fm is configured but the connectivity test failed: {str(e)}",
+                "suggestion": "Check your internet connection and that ws.audioscrobbler.com is reachable from this container."
+            }
+
     async def _check_navidrome_library_config(self) -> Dict[str, str]:
         """Check if Navidrome library configuration is present"""
         library_id = os.getenv("NAVIDROME_LIBRARY_ID")
