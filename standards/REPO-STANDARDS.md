@@ -78,6 +78,16 @@ reviewed by the model against the repo's actual contents.
   merge un-bumped — so keep the check simple and unconditional. Pure `:latest`-deployed
   services are versioned by their image SHA and are exempt; libraries and versioned apps are
   not.
+- **Multi-component repos** — a monorepo where each independently-deployed component
+  (service, server, sidecar) carries its **own** version source — satisfy this **per
+  component**: each component's check runs on the PRs that touch that component and fails an
+  un-bumped change to it. That per-component scoping **is** the correct implementation here —
+  it is *not* the "fragile path filter" the bullet above warns against (that warning is about
+  a **single-version** repo trying to guess what ships). A repo whose version checks are
+  already scoped per component therefore **satisfies §2**; do **not** report the presence,
+  absence, or shape of that scoping as a gap. A PR that touches **no** component (docs- or
+  CI-only) simply has nothing to bump; a single-version repo has no components to scope to, so
+  its one check stays unconditional (above).
 - Notable changes are recorded — a `CHANGELOG`, GitHub Releases, or a dated **Updates**
   section in the README (the pattern docker-infra services already use).
 
