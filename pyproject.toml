@@ -1,0 +1,18 @@
+[project]
+name = "magic-lists-for-navidrome"
+version = "0.1.0"
+description = "Navidrome smart-playlist generator (FastAPI backend + web frontend)."
+requires-python = ">=3.11"
+
+# §2: the single source of truth for the version; bump with
+# `bump-my-version bump <part>` (patch/minor/major) — never hand-edit.
+# Runtime dependencies are installed from requirements.txt (see the Dockerfile);
+# this file exists as the version SSOT + bump-my-version config, not a build
+# target, so it deliberately declares no [build-system].
+[tool.bumpversion]
+current_version = "0.1.0"
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = 'version = "{current_version}"'
+replace = 'version = "{new_version}"'
