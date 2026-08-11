@@ -1,0 +1,29 @@
+name: version-check
+
+# REPO-STANDARDS §2: every PR must bump the version in its single source of
+# truth (pyproject.toml). Fires on every PR, unconditionally (no path filters),
+# and fails if the version matches the base branch. Over-bumping a docs/CI-only
+# PR is harmless (images deploy by SHA); a fragile "what shipped" path filter is
+# not. Bump with `bump-my-version bump patch|minor|major`.
+
+on: pull_request
+
+jobs:
+  version-bumped:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fail if the version wasn't bumped
+        run: |
+          base="origin/${{ github.base_ref }}"
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          new=$(grep -m1 '^version' pyproject.toml | tr -d ' "' | cut -d= -f2)
+          # The version file may not exist on the base branch yet (first
+          # introduction) — treat a missing base file as "changed".
+          old=$(git show "$base:pyproject.toml" 2>/dev/null | grep -m1 '^version' | tr -d ' "' | cut -d= -f2)
+          echo "old=${old:-<none>} new=$new"
+          if [ "$old" = "$new" ]; then
+            echo "::error::version not bumped ($new). Bump it with 'bump-my-version bump <part>'." && exit 1
+          fi
