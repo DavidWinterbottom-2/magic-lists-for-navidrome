@@ -596,11 +596,13 @@ explain the app. They're deliberately layered — a root file small enough to be
 re-read on every request, pointing at detail that's loaded only when relevant —
 so it's worth knowing which is which before editing any of them.
 
-**Start at [`AGENTS.md`](AGENTS.md).** Everything else is reached from there.
+**Start at [`AGENTS.md`](AGENTS.md).** Every other agent-facing file is reached
+from there, and the links form a tree rather than a loop — `AGENTS.md` doesn't
+point back at this file or `SETUP.md`, which are written for people.
 
 | Document | What it directs | Points to |
 | --- | --- | --- |
-| [`AGENTS.md`](AGENTS.md) | The entry point. One-line project description, the exact commands, the rules that apply to every change, and pointers to everything else. Kept deliberately short. | `docs/architecture.md`, `docs/code-style.md`, `standards/REPO-STANDARDS.md`, `CLAUDE.md`, `README.md`, `SETUP.md`, `.github/pull_request_template.md` |
+| [`AGENTS.md`](AGENTS.md) | The entry point. One-line project description, the exact commands, the rules that apply to every change, and pointers to everything else. Kept deliberately short. | `docs/architecture.md`, `docs/code-style.md`, `standards/REPO-STANDARDS.md`, `CLAUDE.md`, `.github/pull_request_template.md` |
 | [`CLAUDE.md`](CLAUDE.md) | Claude Code specifics: which standards apply, the devcontainer, the shared skills library, and how vendored files stay in sync. | `standards/REPO-STANDARDS.md`, `.claude/skills/`, `.github/template-sync.json`, `.github/workflows/template-sync.yml`, `scripts/sync-from-template.sh`, `.devcontainer/post-create.sh` |
 | [`docs/architecture.md`](docs/architecture.md) | How the app is organised, the generation pipeline, the four rules behind playlist behaviour, and the recipe schema. Read before changing playlist generation. | `backend/` modules, `recipes/registry.json`, `pyproject.toml` |
 | [`docs/code-style.md`](docs/code-style.md) | Python, logging, error-handling, frontend and test conventions — only what differs from ordinary practice. | `docs/architecture.md`, REPO-STANDARDS §4 |
