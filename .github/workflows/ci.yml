@@ -32,6 +32,12 @@ jobs:
       - run: ruff check --select=E9,F63,F7,F82 .
       - run: python -m compileall backend tests
 
+      # AGENTS.md is the canonical list of what directs an agent here; the
+      # README's map is rendered from it. Fail if someone edited one and not
+      # the other — a doc map that misdescribes the docs is worse than none.
+      - name: Documentation map is in sync with AGENTS.md
+        run: python scripts/generate-docs-map.py --check
+
   test:
     runs-on: ubuntu-latest
     steps:
