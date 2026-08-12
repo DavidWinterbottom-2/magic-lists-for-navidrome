@@ -589,6 +589,42 @@ ruff check --select=E9,F63,F7,F82 .
 - **Conventions** — see [`CLAUDE.md`](CLAUDE.md) and [`AGENTS.md`](AGENTS.md).
   Branch off `main`, one logical change per PR.
 
+### Documentation map
+
+Several files in this repo exist to direct AI coding agents rather than to
+explain the app. They're deliberately layered — a root file small enough to be
+re-read on every request, pointing at detail that's loaded only when relevant —
+so it's worth knowing which is which before editing any of them.
+
+**Start at [`AGENTS.md`](AGENTS.md).** Everything else is reached from there.
+
+| Document | What it directs | Points to |
+| --- | --- | --- |
+| [`AGENTS.md`](AGENTS.md) | The entry point. One-line project description, the exact commands, the rules that apply to every change, and pointers to everything else. Kept deliberately short. | `docs/architecture.md`, `docs/code-style.md`, `standards/REPO-STANDARDS.md`, `CLAUDE.md`, `README.md`, `SETUP.md`, `.github/pull_request_template.md` |
+| [`CLAUDE.md`](CLAUDE.md) | Claude Code specifics: which standards apply, the devcontainer, the shared skills library, and how vendored files stay in sync. | `standards/REPO-STANDARDS.md`, `.claude/skills/`, `.github/template-sync.json`, `.github/workflows/template-sync.yml`, `scripts/sync-from-template.sh`, `.devcontainer/post-create.sh` |
+| [`docs/architecture.md`](docs/architecture.md) | How the app is organised, the generation pipeline, the four rules behind playlist behaviour, and the recipe schema. Read before changing playlist generation. | `backend/` modules, `recipes/registry.json`, `pyproject.toml` |
+| [`docs/code-style.md`](docs/code-style.md) | Python, logging, error-handling, frontend and test conventions — only what differs from ordinary practice. | `docs/architecture.md`, REPO-STANDARDS §4 |
+| [`standards/REPO-STANDARDS.md`](standards/REPO-STANDARDS.md) | The org-wide rubric (§1–§9) that the files above defer to: branching, versioning, testing, repo hygiene, design system. **Vendored — never hand-edit.** | `HOSTING-SECURITY.md` (deliberately not vendored here), docker-infra service templates |
+| [`.claude/skills/`](.claude/skills/) | Task-specific procedures — opening a PR, running a code review, TDD, resolving conflicts — loaded on demand rather than always in context. **Vendored.** | `standards/REPO-STANDARDS.md`, `.github/pull_request_template.md` |
+| [`.github/pull_request_template.md`](.github/pull_request_template.md) | The Summary / Changes / Validation shape every PR takes. GitHub pre-fills it for humans; the `create-pr` skill fills the same file for agents. | — |
+| [`.github/template-sync.json`](.github/template-sync.json) | Declares which skills and docs are vendored, and from where. Editing this is how you add or drop one. | read by `scripts/sync-from-template.sh` |
+| [`.claude/settings.json`](.claude/settings.json) + [`hooks/session-start.sh`](.claude/hooks/session-start.sh) | Installs dependencies when a Claude Code on the web session starts, so tests and linters work immediately. | `requirements.txt` |
+| [`.env.example`](.env.example) | The authoritative list of configuration variables. Every new variable is documented here. | — |
+
+Two things are enforced by CI rather than described in prose, so an agent finds
+out either way: [`version-check.yml`](.github/workflows/version-check.yml) fails
+any PR that doesn't bump the version, and [`ci.yml`](.github/workflows/ci.yml)
+runs the lint and test gates.
+
+**Why the layering.** Anything in `AGENTS.md` is re-read on every request of
+every session, so it carries only what applies universally; detail lives in
+`docs/` and is read when the task calls for it. The two vendored entries are the
+only deliberate loop back out of the repo: `standards/` and `.claude/skills/`
+are owned upstream in
+[`devcontainer-sandbox`](https://github.com/DavidWinterbottom-2/devcontainer-sandbox),
+and a scheduled workflow opens a PR here whenever a local copy drifts. Changes to
+those belong upstream, not here.
+
 ---
 
 ## Troubleshooting
