@@ -17,9 +17,8 @@ import pytest
 import urllib.request
 import urllib.error
 
-sys.path.insert(0, str(Path(__file__).parent))
-import fake_ai  # noqa: E402
-import fake_navidrome  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from fakes import fake_ai, fake_navidrome  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 

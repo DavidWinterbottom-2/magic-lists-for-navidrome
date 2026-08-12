@@ -6,7 +6,7 @@ assertion is not "a playlist appeared" but "the station obeys its guarantees".
 Those are checked against what actually reached Navidrome.
 """
 
-import fake_navidrome
+from fakes import fake_navidrome
 from playwright.sync_api import expect
 
 
@@ -14,6 +14,13 @@ def open_radio(page):
     page.goto("/")
     page.locator('a[data-page="radio"]').first.click()
     expect(page.locator("#radio-content")).to_be_visible()
+    # Wait for the page's fetches to settle before selecting. loadRadioArtists()
+    # clears the current selection as it repopulates the list, so a selection
+    # made while one is still in flight is silently undone and the form then
+    # submits with no seed. Counting options isn't enough — the count is the
+    # same before and after a repopulate.
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("#radio-artist-select option")).to_have_count(4)
 
 
 def test_the_seed_type_toggle_switches_between_artist_and_song(page):

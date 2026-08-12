@@ -40,19 +40,24 @@ branch = false
 
 # REPO-STANDARDS §4 requires ≥80% coverage of the component's CORE code, enforced
 # in CI. `include` below is that core: the pure logic that encodes the product
-# rules — pooling and the post-curation guarantees, engagement scoring, recipe
-# substitution, Last.fm parsing.
+# rules, plus the persistence and auth layers now that integration tests reach
+# them.
 #
-# Deliberately outside the gate:
-#   - main.py, navidrome_client.py, rediscover.py, ai_client.py, database.py,
-#     auth.py, services/* — route and I/O layers whose real bar under §4 is
-#     integration and browser-driven e2e tests, not unit coverage. Whole-backend
-#     coverage is ~35% and CI prints it on every run, so the gap stays visible.
-#   - schemas.py — Pydantic model declarations, "covered" by import alone.
-#     Including it would inflate the number without testing anything.
+# Still outside the gate, and why:
+#   - main.py (50%), navidrome_client.py (57%), ai_client.py (44%) — covered
+#     through the integration and browser suites rather than directly. Adding
+#     any of them today would pull the aggregate under the floor; add them as
+#     their own coverage climbs.
+#   - rediscover.py — barely covered, and large enough to sink the aggregate
+#     on its own. The clearest next target.
+#   - schemas.py — Pydantic declarations, "covered" by import alone. Including
+#     it would inflate the number without testing anything.
 #
-# The floor is 80 and never moves down. Widen `include` as the layers above grow
-# real tests.
+# Whole-backend coverage is ~60% and CI prints it on every run, so the gap stays
+# visible rather than hidden behind a green gate.
+#
+# The floor moves up, never down: raised to 85 once the aggregate reached 87%,
+# so the number can't quietly sag back toward the old floor.
 [tool.coverage.report]
 include = [
     "backend/radio.py",
@@ -60,8 +65,10 @@ include = [
     "backend/lastfm_client.py",
     "backend/recipe_manager.py",
     "backend/ai_response.py",
+    "backend/database.py",
+    "backend/auth.py",
     "backend/errors.py",
 ]
-fail_under = 80
+fail_under = 85
 show_missing = true
 skip_covered = false
