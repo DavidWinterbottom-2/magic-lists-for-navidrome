@@ -123,9 +123,21 @@ two recipes, a candidate-selection phase and a curation phase.
 2. Point the playlist type at it in `registry.json`.
 3. Move the superseded file to the archive directory.
 4. Check it parses: `GET /api/recipes` lists what's available, and
-   `GET /api/recipes/validate` validates every recipe file.
+   `GET /api/recipes/validate` loads every recipe file.
 
 Rolling back is step 2 in reverse.
+
+> **Known bug — the validator checks a superseded schema.**
+> `RecipeManager.validate_recipe` still requires `version`, `description`,
+> `inputs` and `strategy_notes`, and reads `prompt_template` / `llm_params` —
+> the shape recipes had before the seven-key schema above. No current recipe has
+> those fields, so the endpoint reports the same four "missing required field"
+> errors for **every** recipe, and `/api/recipes` reports each one as
+> `uses_llm: false` with null metadata.
+>
+> Treat those errors as noise for now: the endpoint is still useful for
+> confirming a new recipe file *parses*, but not for confirming it's valid.
+> Fixing the validator to match the real schema is worth doing on its own.
 
 ## Scheduling and rebuilds
 
