@@ -10,7 +10,9 @@ name: ci
 # one place, not duplicated here. The whole-backend number is printed after
 # every run so the untested layers stay visible rather than hidden by the gate.
 #
-# Still outstanding against §4: browser-driven e2e tests for the web UI.
+# The e2e job below covers §4's browser-driven requirement for a web UI. It
+# drives the real app in headless Chromium against a fake Navidrome and a fake
+# AI provider (see e2e/README.md), so it needs no secrets and no network.
 
 on:
   pull_request:
@@ -65,3 +67,33 @@ jobs:
       # gate, but nothing in tests/ may depend on pytest-only features.
       - name: Tests under stdlib unittest
         run: python -m unittest discover -s tests -p 'test_*.py'
+
+  # REPO-STANDARDS §4: a web UI needs tests that drive the actual UI in a
+  # browser. Separate job because it needs a browser install the other jobs
+  # don't, and because a UI failure should be legible as a UI failure.
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+
+      # The devcontainer ships pre-provisioned browsers; a CI runner doesn't.
+      # --with-deps pulls the system libraries headless Chromium needs.
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Browser end-to-end tests
+        run: python -m pytest e2e/ -q --browser chromium --tracing retain-on-failure
+
+      # A UI test that fails only in CI is close to undebuggable without one of
+      # these: the trace replays the run frame by frame.
+      - name: Upload traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: test-results/
+          retention-days: 7
