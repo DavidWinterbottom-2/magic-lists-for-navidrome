@@ -236,9 +236,15 @@ def calculate_filter_threshold(target_playlist_size: int) -> int:
     elif target_playlist_size <= 100:
         return 6   # 100 tracks -> keep top 600
     else:
-        # For larger playlists, use diminishing multiplier
-        # Cap at 5x to balance quality and token efficiency
-        return max(5, int(600 / target_playlist_size * 6))
+        # Above 100 the multiplier bottoms out at its 5x floor, which balances
+        # candidate quality against token cost.
+        #
+        # This used to read `max(5, int(600 / size * 6))`, meant to taper toward
+        # that floor — but the `* 6` inverted it: at 200 tracks it returned 18x,
+        # a WIDER pool than the 6x used at 100. Since the multiplier sets the
+        # threshold at which filtering engages at all, large playlists were
+        # sending the entire unfiltered pool to the model.
+        return 5
 
 
 def should_apply_smart_filtering(source_tracks: List[Dict], target_playlist_size: int) -> bool:
