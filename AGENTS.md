@@ -57,9 +57,20 @@ before changing playlist generation.
 
 ## Where the detail lives
 
+This table is the **canonical list of what directs an agent in this repo**. The
+README's documentation map is generated from it by
+[`scripts/generate-docs-map.py`](scripts/generate-docs-map.py), and CI fails if
+the two drift — so add or change an entry here, never there.
+
+<!-- docs-map:canonical -->
+
 | For | Read |
 | --- | --- |
 | How the app is organised and why it behaves as it does | [`docs/architecture.md`](docs/architecture.md) |
 | Python style, logging, error handling | [`docs/code-style.md`](docs/code-style.md) |
 | Repo standards — branching, testing, versioning, design system | [`standards/REPO-STANDARDS.md`](standards/REPO-STANDARDS.md) |
 | Devcontainer, shared skills, template sync | [`CLAUDE.md`](CLAUDE.md) |
+| Task procedures — opening a PR, code review, TDD — loaded on demand. **Vendored** | [`.claude/skills/`](.claude/skills/) |
+| The shape every PR description takes | [`.github/pull_request_template.md`](.github/pull_request_template.md) |
+| Which skills and docs are vendored, and from where | [`.github/template-sync.json`](.github/template-sync.json) |
+| Every configuration variable, and what it does | [`.env.example`](.env.example) |
