@@ -1,104 +1,63 @@
-# Agent Development Guide
+# AGENTS.md
 
-## Build/Lint/Test Commands
+MagicLists builds AI-curated smart playlists for a self-hosted
+[Navidrome](https://www.navidrome.org/) server — FastAPI backend, vanilla-JS
+frontend, SQLite.
 
-### Development Server
+## Commands
+
+Dependencies come from `requirements.txt` (this is not an installable package),
+and tests are **stdlib unittest** — there is no pytest or coverage config.
+
 ```bash
-# With virtual environment (recommended)
-source venv/bin/activate
 python -m uvicorn backend.main:app --host 0.0.0.0 --port 4545 --reload
-
-# Without virtual environment
-python -m uvicorn backend.main:app --host 0.0.0.0 --port 4545 --reload
+python -m unittest discover -s tests -p 'test_*.py' -v   # whole suite
+python -m unittest tests.test_radio -v                   # one module
+ruff check --select=E9,F63,F7,F82 .                      # the subset CI enforces
+python -m compileall backend tests
+bump-my-version bump patch                               # pip install bump-my-version
+docker compose up -d --build
 ```
 
-### Docker Development
-```bash
-# Build and run with Docker Compose
-docker-compose up --build
+The app serves on **4545**. Work in the devcontainer (`.devcontainer/`).
 
-# Build only
-docker build .
+## Every change
 
-# Run only
-docker-compose up -d
-```
+- **Branch off `main`; merge via PR.** Never push to `main`. Name the branch
+  `claude/<skill>/<description>`, `claude/<description>-<id>`,
+  `bugfix/<description>`, or `<type>/<description>` for human work.
+- **Bump the version** with `bump-my-version` — CI fails a PR that doesn't,
+  including docs- and CI-only ones. Over-bumping is harmless; images deploy by
+  SHA.
+- **One logical change per PR**, described as Summary / Changes / Validation —
+  the sections in [`.github/pull_request_template.md`](.github/pull_request_template.md).
+- **Never hand-edit vendored files** — `standards/`, `.claude/skills/`, and the
+  design-system CSS/JS in the frontend. They sync from upstream; changes belong
+  there. See [CLAUDE.md](CLAUDE.md).
+- **New env var ⇒ document it in `.env.example`.** `.env` is git-ignored.
+- **This repo is public.** No credentials, and no private infrastructure detail
+  in code, comments or commits.
 
-### Testing
-```bash
-# Run the genre API test
-python test_genre_api.py
+## Non-obvious rules
 
-# Quick API test
-curl "http://localhost:4545/api/artists"
-```
+Each is expanded in [`docs/architecture.md`](docs/architecture.md) — read it
+before changing playlist generation.
 
-### Production Deployment
-```bash
-# Docker Compose (recommended)
-docker-compose up -d
+- Guarantees about a playlist are **enforced in code after curation**, never
+  merely asked for in the prompt.
+- A thin library yields a **short, explained** playlist — never a padded one.
+- Optional integrations (AI, Last.fm, Lidarr) **degrade**; they never fail a
+  request.
+- Curation prompts are **versioned files plus a registry** — never edited in
+  place.
 
-# Manual Docker run
-docker run -d --name magiclists -p 4545:8000 -e NAVIDROME_URL=... -e NAVIDROME_USERNAME=... -e NAVIDROME_PASSWORD=... -e DATABASE_PATH=/app/data/magiclists.db -v ./magiclists-data:/app/data rickysynnot/magic-lists-for-navidrome:latest
-```
+## Where the detail lives
 
-## Code Style Guidelines
-
-### Imports
-- Standard library imports first
-- Third-party imports second
-- Local imports last with relative imports
-- Use `from .module import Class` for relative imports
-- Group imports with blank lines between groups
-
-### Formatting
-- 4-space indentation
-- Line length: reasonable (no strict limit enforced)
-- Consistent spacing around operators and commas
-- Blank lines between functions and classes
-
-### Types
-- Use type hints extensively from `typing` module
-- Common types: `List`, `Optional`, `Dict`, `Union`
-- Return type annotations for all functions
-
-### Naming Conventions
-- **Variables/Functions**: `snake_case`
-- **Classes**: `PascalCase`
-- **Constants**: `UPPER_CASE`
-- **Modules**: `snake_case`
-- **Private methods**: `_leading_underscore`
-
-### Error Handling
-- Use try/except blocks for expected errors
-- Raise `HTTPException` for API errors with appropriate status codes
-- Log errors using Python's logging module
-- Use specific exception types when possible
-
-### Async/Await
-- Use `async def` for I/O operations
-- Use `await` for async calls
-- Return appropriate types from async functions
-
-### Documentation
-- Use docstrings for all public functions
-- Describe what the function does, not how
-- Include parameter descriptions when complex
-
-### Logging
-- Use `logging.getLogger(__name__)` for module-specific loggers
-- Log levels: DEBUG, INFO, WARNING, ERROR
-- Include relevant context in log messages
-- Use emojis sparingly for visual distinction in logs
-
-### Database
-- Use async SQLite operations with `aiosqlite`
-- Handle database migrations gracefully
-- Store JSON data in TEXT columns when needed
-- Use parameterized queries to prevent SQL injection
-
-### Security
-- Never log sensitive information (API keys, passwords)
-- Validate environment variables
-- Use secure defaults for file permissions
-- Handle authentication errors appropriately
+| For | Read |
+| --- | --- |
+| How the app is organised and why it behaves as it does | [`docs/architecture.md`](docs/architecture.md) |
+| Python style, logging, error handling | [`docs/code-style.md`](docs/code-style.md) |
+| Repo standards — branching, testing, versioning, design system | [`standards/REPO-STANDARDS.md`](standards/REPO-STANDARDS.md) |
+| Devcontainer, shared skills, template sync | [`CLAUDE.md`](CLAUDE.md) |
+| What the app does, and how it deploys | [`README.md`](README.md) |
+| Configuring and verifying a running instance | [`SETUP.md`](SETUP.md) |

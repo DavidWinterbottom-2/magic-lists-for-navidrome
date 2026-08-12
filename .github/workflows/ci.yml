@@ -2,9 +2,14 @@ name: ci
 
 # Adapted from the devcontainer-sandbox template's ci.yml. The template assumes a
 # packaged project (pip install -e .[dev], ruff config, pytest+coverage); this repo
-# currently ships runtime deps via requirements.txt and stdlib unittest tests, so
-# the jobs are wired to that reality. Tighten toward the template (ruff config +
-# pytest --cov-fail-under) once the repo grows a pyproject.toml.
+# ships runtime deps via requirements.txt and stdlib unittest tests, so the jobs
+# are wired to that reality.
+#
+# Agreed direction (REPO-STANDARDS §4): move the test job to
+# `pytest --cov=backend --cov-fail-under=80` and add a browser-driven e2e run.
+# pyproject.toml now exists to hang the config off. Until that lands, this job
+# runs the suite with no coverage floor — a known, deliberate gap, not an
+# oversight. See docs/code-style.md.
 
 on:
   pull_request:

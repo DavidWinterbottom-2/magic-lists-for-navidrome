@@ -1,223 +1,326 @@
 # MagicLists Setup Guide
 
+Hands-on configuration and verification. For what the app does and how it's
+deployed on winterbottom.xyz infrastructure, see [README.md](README.md); for repo
+conventions, [AGENTS.md](AGENTS.md).
+
 ## Prerequisites
 
-1. **Navidrome Server**: Running instance with music library scanned
-2. **Navidrome Account**: Username and password for your Navidrome server
-3. **AI API Key**: Optional, for AI-powered curation
+1. **A Navidrome server** with your music library scanned
+2. **A Navidrome account** — username and password (MagicLists logs in and
+   manages its own token; no manual API token setup)
+3. **An AI API key** — optional, but curation quality depends on it
 
-## Environment Setup
+---
 
-### 1. Copy Environment Template
+## 1. Environment
+
 ```bash
 cp .env.example .env
 ```
 
-### 2. Configure Required Variables
+[`.env.example`](.env.example) is the annotated, authoritative list. The
+essentials:
+
 ```bash
-# Required - Navidrome connection
-NAVIDROME_URL=http://localhost:4533
+# Required — Navidrome connection
+NAVIDROME_URL=http://navidrome:4533     # container name on a shared Docker network
 NAVIDROME_USERNAME=your_navidrome_username
 NAVIDROME_PASSWORD=your_navidrome_password
 
-# Required - Database location (will be auto-created)
-DATABASE_PATH=./magiclists.db        # For standalone: ./magiclists.db
-                                     # For Docker: /app/data/magiclists.db
+# Required — database location (created automatically, must be writable)
+DATABASE_PATH=/app/data/magiclists.db   # Docker, on a mounted volume
+# DATABASE_PATH=./magiclists.db         # running from source
 
-# Optional - AI curation (without this, uses fallback algorithm)
-AI_PROVIDER=openrouter              # Options: openrouter, groq, google, ollama
-AI_API_KEY=sk-or-v1-your-key-here   # For OpenRouter/Groq/Google (not needed for Ollama)
-AI_MODEL=meta-llama/llama-3.3-70b-instruct     # Optional, uses provider defaults
+# Optional — AI curation (without it, playlists fall back to play-count ordering)
+AI_PROVIDER=openrouter                  # openrouter | groq | google | ollama
+AI_API_KEY=sk-or-v1-your-key-here       # not needed for ollama
+AI_MODEL=meta-llama/llama-3.3-70b-instruct
 
-# Optional - Ollama timeout (only for ollama provider)
-OLLAMA_TIMEOUT=180                   # Seconds, increase for slower CPUs
+# Optional — logging
+LOG_LEVEL=INFO                          # ERROR | INFO | DEBUG
 ```
 
-### 3. For Docker Deployment
+`.env` is git-ignored. Never commit it — document any new variable in
+`.env.example` instead.
+
+### Pick the right `NAVIDROME_URL`
+
+| Navidrome is… | Use |
+| --- | --- |
+| on the same Docker network | `http://navidrome:4533` (its container name) |
+| on the same host | `http://host.docker.internal:4533` (Docker Desktop) or `http://172.17.0.1:4533` (Linux) |
+| elsewhere on the LAN | `http://192.168.1.100:4533` |
+| public | `https://music.yourdomain.com` |
+
+This is the single most common thing to get wrong.
+
+---
+
+## 2. Start it
+
+### Option A — from source (development)
+
 ```bash
-# Additional for Docker
-MUSIC_PATH=/path/to/your/music/library
-```
-
-> **Note**: MagicLists automatically handles authentication with Navidrome using your username/password. No manual API token setup required!
-
-## Quick Start Options
-
-### Option A: Local Development
-```bash
-# Install dependencies
 pip install -r requirements.txt
-
-# Set environment variables
-export NAVIDROME_URL=http://localhost:4533
-export NAVIDROME_USERNAME=your_username
-export NAVIDROME_PASSWORD=your_password
-
-# Run the application
-python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 4545
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 4545 --reload
 ```
 
-### Option B: Docker Compose
+Use `DATABASE_PATH=./magiclists.db` for this. Dev normally happens in the
+devcontainer (`.devcontainer/`, "Reopen in Container") where dependencies are
+already installed.
+
+### Option B — Docker Compose
+
 ```bash
-# Configure .env file first, then:
-docker-compose up -d
+docker compose pull && docker compose up -d     # published GHCR image
+docker compose up -d --build                    # build from source instead
 ```
 
-## Testing Your Setup
+The container listens on **4545** and needs `/app/data` on a persistent
+volume — that's the SQLite database holding your playlists and schedules.
 
-### 1. Check Navidrome Connection
+Either way, the app is at <http://localhost:4545>.
+
+---
+
+## 3. Verify
+
+### System check page
+
+Open <http://localhost:4545/system-check>. Configuration is also validated on
+startup, and you'll be redirected here if anything required is wrong. It tests:
+
+- **Environment variables** — required values present
+- **Navidrome URL** — server reachable
+- **Navidrome authentication** — credentials accepted
+- **Navidrome artists API** — API access working
+- **AI provider** — configured and reachable
+- **Library configuration** — single vs multiple libraries
+- **Last.fm integration** — optional; reported but never fails the page
+
+Each failure comes with a specific suggestion. The same data is available as
+JSON at `/api/health-check`, and a plain liveness probe at `/health`.
+
+### Smoke-test the API
+
 ```bash
-# MagicLists will automatically authenticate - just test the app endpoint
+# Liveness
+curl -f http://localhost:4545/health
+
+# Library reachable
 curl "http://localhost:4545/api/artists"
-```
 
-### 2. Test MagicLists API
-```bash
-# Get artists
-curl "http://localhost:4545/api/artists"
-
-# Create test "This Is" playlist
+# Build a "This Is" playlist
 curl -X POST "http://localhost:4545/api/create_playlist" \
   -H "Content-Type: application/json" \
-  -d '{"artist_ids": ["some_artist_id"], "playlist_length": 25}'
+  -d '{"artist_ids": ["<artist_id>"], "playlist_length": 25}'
 
-# Get managed playlists
+# Build a Radio station from an artist seed
+curl -X POST "http://localhost:4545/api/create_radio_playlist" \
+  -H "Content-Type: application/json" \
+  -d '{"seed_type": "artist", "seed_id": "<artist_id>", "playlist_length": 25}'
+
+# ...or from a song seed (find one first)
+curl "http://localhost:4545/api/songs?q=wintersleep"
+curl -X POST "http://localhost:4545/api/create_radio_playlist" \
+  -H "Content-Type: application/json" \
+  -d '{"seed_type": "song", "seed_id": "<song_id>", "playlist_length": 25}'
+
+# What was created, and how it was built
 curl "http://localhost:4545/api/playlists"
 
-# Check scheduler status
+# Scheduler
 curl "http://localhost:4545/api/scheduler/status"
 ```
 
-### 3. Access Web Interface
-- **Development and Docker**: http://localhost:4545
+Interactive docs at <http://localhost:4545/docs>, schema at `/openapi.json`.
+
+---
+
+## 4. Optional integrations
+
+### Last.fm
+
+Sharpens curation across the board: loved tracks get a scoring boost in every
+playlist type, Radio's album suggestions get grounded in the real
+similar-artist graph, and Re-Discover gains a fallback.
+
+```bash
+LASTFM_API_KEY=          # create one at https://www.last.fm/api/account/create
+LASTFM_USERNAME=         # your Last.fm handle, not your email
+```
+
+Reading your loved and top tracks needs only these two — no login — provided
+Settings → Privacy → **"Hide recent listening information" is off**. Leave
+`LASTFM_API_KEY` empty to disable; everything degrades to Navidrome-only.
+
+### Lidarr
+
+```bash
+LIDARR_URL=https://lidarr.example.com
+```
+
+Radio's "albums you don't own yet" suggestions become one-click deep links into
+Lidarr's *Add New* search, prefilled with the artist and album. Unset, they
+render as plain text.
+
+### Multiple Navidrome libraries
+
+MagicLists detects and works across all libraries by default. To target one:
+
+```bash
+NAVIDROME_LIBRARY_ID=your-library-id-here
+```
+
+Find the ID in Navidrome's admin interface; the system-check page reports which
+configuration is in effect.
+
+### Analytics
+
+Off unless **both** are set, and they should point at an Umami instance you run —
+never a third party's, or your usage (including which AI provider and model you
+use) leaves your estate.
+
+```bash
+ANALYTICS_SCRIPT_URL=https://<your-umami>/script.js
+ANALYTICS_WEBSITE_ID=00000000-0000-0000-0000-000000000000
+```
+
+### Login gate (Microsoft Entra ID)
+
+Off by default, so a trusted LAN or Tailscale deployment works unchanged. **Turn
+it on before exposing the app to the internet** — it holds your Navidrome
+credentials and AI key server-side.
+
+```bash
+AUTH_DISABLED=false
+AZURE_TENANT_ID=consumers          # "consumers" for personal MS accounts, or a tenant GUID
+AZURE_CLIENT_ID=...
+AZURE_CLIENT_SECRET=...
+ALLOWED_EMAILS=you@example.com     # comma-separated; empty = anyone in the tenant
+SESSION_SECRET=<long random value> # set it, so logins survive a restart
+```
+
+Add a **Web** redirect URI of `https://<your-host>/auth/callback` to the Azure
+app registration. With auth on and any credential missing, the app **refuses to
+start** rather than coming up unprotected. See the README for the full contract.
+
+---
+
+## 5. How the features behave
+
+### Playlist types
+
+- **This Is (Artist)** — hits, deep cuts and featured appearances for one
+  artist, without duplicates
+- **Radio** — a station seeded from an artist or song, built from similar-style
+  tracks in your own library, plus albums by fitting artists you don't own.
+  Fully documented in the [README](README.md#radio-in-detail)
+- **Genre Mix** — a curated mix from a whole genre in your collection
+- **Re-Discover** — surfaces tracks you haven't played in a while
+
+Default length is 25 tracks; 50 and 100 are offered in the UI.
+
+### AI curation
+
+- **With AI** — selection considers style, quality, variety and flow
+- **Without AI** — falls back to play-count and recency ordering
+- Radio benefits most: style coherence is a judgement call the fallback can't
+  make
+
+Rules that *must* hold are enforced in code after curation, not just asked for in
+the prompt — so a Radio station always opens with its seed, never lets the seed
+artist exceed 20% of the tracklist, and comes back genuinely **short** rather
+than padded when your library runs out of similar material. The shortfall is
+reported in the UI along with what to buy to fix it.
+
+### Refreshing
+
+- **Scheduled** — daily, weekly or monthly. The scheduler wakes twice a day
+  (01:01 and 13:01) and rebuilds whatever is due
+- **Catch-up** — a 7-day grace period covers refreshes missed while the app was
+  offline
+- **Recreate** — rebuild now from playlist management, optionally changing the
+  length or schedule. It reuses the scheduler's own refresh path, so a manual
+  rebuild and an automatic one produce identical results
+- **Length is preserved** across refreshes unless you change it
+- **How it was last built** is stored with the playlist and shown in the UI
+
+```bash
+curl "http://localhost:4545/api/scheduler/status"           # state
+curl -X POST "http://localhost:4545/api/scheduler/start"    # start (auto-starts on launch)
+curl -X POST "http://localhost:4545/api/scheduler/trigger"  # run the due-check now
+curl -X POST "http://localhost:4545/api/playlists/1/recreate" \
+  -H "Content-Type: application/json" -d '{"playlist_length": 50}'
+```
+
+Scheduler activity logs to stdout **and** a rotating `scheduler.log` (5MB × 2
+backups) in the working directory. `LOG_LEVEL=DEBUG` makes it verbose.
+
+### Storage
+
+- **Navidrome** holds the real, playable playlists — with the curator's write-up
+  as the playlist comment
+- **The local SQLite database** holds metadata, track summaries, schedules,
+  album suggestions and build records
+
+---
 
 ## Troubleshooting
 
 ### "No artists found"
-- Ensure Navidrome has scanned your music library
-- Check that `NAVIDROME_USERNAME` and `NAVIDROME_PASSWORD` are correct
-- Verify `NAVIDROME_URL` is correct and accessible
+
+- Navidrome hasn't scanned the library, or is still scanning — check its logs
+- `NAVIDROME_USERNAME` / `NAVIDROME_PASSWORD` wrong
+- `NAVIDROME_URL` not reachable from *inside* the container
+
+### Database write errors (500 on playlist creation, though system checks pass)
+
+`DATABASE_PATH` is unset or not writable.
+
+- **Docker** — `/app/data/magiclists.db`, with a volume mounted at `/app/data`
+- **From source** — `./magiclists.db`, or an absolute path to a writable directory
+- Check the directory exists, is writable by the app user (the container runs as
+  uid 1000), and that there's disk space
 
 ### "Failed to create playlist"
-- Ensure artist has tracks available in your library
-- Check that your Navidrome user account has playlist creation permissions
-- Verify network connectivity between MagicLists and Navidrome
 
-### Database Write Errors
-If you get 500 server errors when creating playlists (even though system checks pass):
-- **Check**: `DATABASE_PATH` environment variable is set
-- **Docker**: Should be `/app/data/magiclists.db` with volume mounted
-- **Standalone**: Should be `./magiclists.db` or absolute path to writable location
-- **Verify**: The directory exists and is writable by the application
+- The artist has no tracks in the selected library
+- The Navidrome account lacks playlist-creation permission
+- Network between MagicLists and Navidrome is down — the error should say which
 
-### AI Curation Not Working
-- Ensure `AI_PROVIDER` and `AI_API_KEY` are set correctly (if required)
-- For Groq: Check your API key from https://console.groq.com/
-- For OpenRouter: Check your API key has sufficient credits
-- For Ollama: Ensure Ollama server is running (`ollama serve`)
-- Application will fall back to play-count based selection
+### AI curation not working
 
-### Docker Issues
-- Ensure `MUSIC_PATH` points to your music directory
-- Check Docker has permission to access music files
-- Verify all environment variables are set in `.env`
+- `AI_PROVIDER` / `AI_API_KEY` wrong for the provider — the system-check page
+  tests this
+- OpenRouter: key out of credit. Groq / Google: key invalid
+- Ollama: server not running (`ollama serve`), model not pulled, or the request
+  timed out — raise `OLLAMA_TIMEOUT` (default 180s) on a slow CPU
+- The app falls back to play-count selection rather than failing the request, so
+  check `/api/ai-model-info` if you're unsure whether AI is actually in use
 
-## Feature Notes
+### Radio produces the same station every time
 
-### AI Curation
-- **With AI**: Intelligent track selection considering quality, variety, and flow
-- **Without AI**: Falls back to play-count + recency based selection
-- **Track Limit**: User-configurable (default 25 tracks)
+Check the build note on the playlist. If the similar-songs lookup failed, the
+station was rebuilt from a reduced pool and will resemble the last one — a
+Navidrome/Last.fm recall problem, not a curation one.
 
-### Playlist Types
-- **This Is (Artist)**: Single-artist playlists with hits and deep cuts
-- **Re-Discover**: Surface forgotten tracks from your library based on listening history
+### Radio stations come up short
 
-### Auto-Refresh Scheduling
-- **Daily/Weekly/Monthly**: Automatic playlist refresh at scheduled times
-- **Catch-up Logic**: 7-day grace period for missed refreshes (system offline)
-- **Length Preservation**: Refreshes maintain original user-specified playlist length
+Your library doesn't have enough similar-style material for the requested
+length. That's what the album suggestions beneath the tracklist are for.
 
-### Playlist Storage
-- **Navidrome**: Actual playable playlists in your music server
-- **Local Database**: Metadata, track titles, and scheduling information
-- **Refresh Tracking**: Last refreshed timestamps and next refresh scheduling
+### Containers can't see each other
 
-## Scheduler System
-
-### Automatic Operation
-- **Runs every hour** checking for playlists due for refresh
-- **Logs activity** to `scheduler.log` for monitoring
-- **Heartbeat logging** shows when scheduler runs (even if no tasks)
-
-### Manual Control
 ```bash
-# Check scheduler status
-curl "http://localhost:4545/api/scheduler/status"
-
-# Start scheduler (auto-starts on app launch)
-curl -X POST "http://localhost:4545/api/scheduler/start"
-
-# Manually trigger refresh check
-curl -X POST "http://localhost:4545/api/scheduler/trigger"
+docker network ls
+docker network inspect <network>
+docker ps --format "table {{.Names}}\t{{.Networks}}"
 ```
 
-### AI Configuration (Optional)
+Both containers must be on the same network for the container-name URL to
+resolve.
 
-For AI-powered playlist curation, choose from these providers:
-
-#### Option 1: OpenRouter (Recommended - Free & Flexible)
-1. **Get an OpenRouter API key** from https://openrouter.ai ($5 minimum)
-2. **Add to your `.env` file:**
-   ```bash
-   AI_PROVIDER=openrouter
-   AI_API_KEY=sk-or-v1-your-key-here
-   AI_MODEL=meta-llama/llama-3.3-70b-instruct # Paid model
-   ```
-
-**Popular OpenRouter models:**
-- `deepseek/deepseek-chat` - Very cost-effective (free)
-- `meta-llama/llama-3.3-70b-instruct` - Fast and reliable
-- `anthropic/claude-3-haiku` - Good for creative tasks
-
-#### Option 2: Groq (Fast & Free)
-1. **Get a free Groq API key** from https://console.groq.com/ (no credit card required)
-2. **Add to your `.env` file:**
-   ```bash
-   AI_PROVIDER=groq
-   AI_API_KEY=gsk_your-groq-key-here
-   AI_MODEL=llama-3.1-8b-instant
-   ```
-
-#### Option 3: Google AI (Free & Generous Quota)
-1. **Get a free Google AI API key** from https://ai.google.dev/ (no credit card required)
-2. **Add to your `.env` file:**
-   ```bash
-   AI_PROVIDER=google
-   AI_API_KEY=AIzaSy_your-google-key-here
-   AI_MODEL=gemini-2.5-flash
-   ```
-
-#### Option 4: Ollama (Local Models)
-1. **Install Ollama** from https://ollama.com
-2. **Pull and run a model:**
-   ```bash
-   ollama pull llama3.2
-   ollama serve
-   ```
-3. **Add to your `.env` file:**
-   ```bash
-   AI_PROVIDER=ollama
-   AI_MODEL=llama3.2
-   OLLAMA_BASE_URL=http://localhost:11434/v1/chat/completions
-   # OLLAMA_TIMEOUT=300  # Increase for slower CPUs (default: 180 seconds)
-   ```
-
-Without AI configuration, playlists use fallback algorithms based on play counts.
-
-## API Documentation
-
-Once running, visit:
-- **Web Interface**: http://localhost:4545
-- **API Docs**: http://localhost:4545/docs
-- **OpenAPI Schema**: http://localhost:4545/openapi.json
+**Still stuck?** `/system-check` tests each dependency individually and tells you
+what to fix.
