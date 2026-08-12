@@ -1,0 +1,18 @@
+# Development and CI dependencies. Runtime deps live in requirements.txt and are
+# the only ones installed into the image (see Dockerfile).
+#
+#   pip install -r requirements.txt -r requirements-dev.txt
+#
+# A separate file rather than [project.optional-dependencies] because
+# pyproject.toml deliberately declares no [build-system] — this repo is an app,
+# not an installable package, so `pip install -e .[dev]` has nothing to build.
+
+pytest>=8.0.0
+pytest-cov>=5.0.0
+
+# Lint: CI runs the hard-error subset (E9,F63,F7,F82) rather than a full check,
+# since the repo has no ruff config and legacy style noise would bury the signal.
+ruff>=0.6.0
+
+# Version bumping — REPO-STANDARDS §2. `bump-my-version bump patch|minor|major`
+bump-my-version>=0.20.0

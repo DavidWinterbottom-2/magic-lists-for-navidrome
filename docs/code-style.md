@@ -72,20 +72,25 @@ against reads as noise to the next person deciding whether it's safe to remove.
 
 ## Tests
 
-**Where this is heading.** The agreed direction (REPO-STANDARDS §4) is
-`pytest --cov=backend --cov-fail-under=80` in CI, plus a browser-driven e2e suite
-for the web UI. Neither is wired up yet; CI currently runs the suite with no
-coverage floor. That's a known gap, not the intended end state — so write new
-tests to run under **both** runners, which plain `unittest.TestCase` classes
-already do:
+**pytest is the gate; the tests stay runner-agnostic.** CI runs
+`pytest --cov=backend` and fails below **80% coverage of the core modules**
+(REPO-STANDARDS §4). The gated set and the reasoning behind it live in
+`[tool.coverage.report]` in `pyproject.toml`.
+
+The suite is plain `unittest.TestCase` classes, which pytest collects natively,
+and CI runs it **both** ways to keep it that way:
 
 ```bash
-python -m unittest discover -s tests -p 'test_*.py' -v   # today, in CI
-python -m pytest tests/ -v                               # also passes
+pytest -q --cov=backend --cov-report=term-missing   # the gate
+python -m unittest discover -s tests -p 'test_*.py' # must also pass
 ```
 
-Avoid anything that would need porting later: no `unittest`-only helpers where a
-plain assertion works, and no reliance on test execution order.
+So: no pytest-only features — no fixtures, no `@pytest.mark`, no bare-function
+tests — and no reliance on execution order.
+
+Coverage is a floor, not a target. Don't write a test whose only purpose is to
+execute a line; the gate exists to stop the core logic silently losing its tests,
+not to be satisfied.
 
 - One module per area under `tests/`, with a docstring saying what it covers and
   how to run it.
