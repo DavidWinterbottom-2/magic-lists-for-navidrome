@@ -75,3 +75,4 @@ the two drift — so add or change an entry here, never there.
 | The shape every PR description takes | [`.github/pull_request_template.md`](.github/pull_request_template.md) |
 | Which skills and docs are vendored, and from where | [`.github/template-sync.json`](.github/template-sync.json) |
 | Every configuration variable, and what it does | [`.env.example`](.env.example) |
+| Writing browser tests — the fakes, and the traps that make them pass vacuously | [`e2e/README.md`](e2e/README.md) |
