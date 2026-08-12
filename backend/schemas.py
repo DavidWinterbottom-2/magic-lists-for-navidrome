@@ -99,7 +99,11 @@ class RediscoverTrack(BaseModel):
     album: str
     score: float
     historical_plays: int
-    days_since_last_play: str
+    # Computed as a day count everywhere in rediscover.py, but one legacy path
+    # still yields the string "30+". Declared `str` alone, this rejected the
+    # int and returned a 500 for any library holding never-played tracks —
+    # which is most of them.
+    days_since_last_play: Union[int, str]
 
 class RediscoverWeeklyResponse(BaseModel):
     """Response schema for Re-Discover Weekly"""

@@ -102,4 +102,11 @@ def start(host="127.0.0.1", port=0):
     # would make the fake a bottleneck the real Navidrome isn't.
     server = ThreadingHTTPServer((host, port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    return f"http://{host}:{server.server_address[1]}", server.shutdown
+
+    def stop():
+        # shutdown() only stops the serve loop; without server_close() the
+        # listening socket stays open and every run leaks one per fake.
+        server.shutdown()
+        server.server_close()
+
+    return f"http://{host}:{server.server_address[1]}", stop

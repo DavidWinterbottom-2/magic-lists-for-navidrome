@@ -176,6 +176,10 @@ def handle(path, query):
             {"id": a["id"], "name": a["name"]} for a in others
         ]}})
 
+    if path.endswith("/getSong.view"):
+        song = SONGS.get(first("id"))
+        return ok({"song": song}) if song else ok()
+
     if path.endswith("/getStarred.view"):
         return ok({"starred": {"song": ALL_SONGS[:3]}})
 
@@ -241,5 +245,11 @@ def start(host="127.0.0.1", port=0):
     server = ThreadingHTTPServer((host, port), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    base_url = f"http://{host}:{server.server_address[1]}"
-    return base_url, server.shutdown
+
+    def stop():
+        # shutdown() only stops the serve loop; without server_close() the
+        # listening socket stays open and every run leaks one per fake.
+        server.shutdown()
+        server.server_close()
+
+    return f"http://{host}:{server.server_address[1]}", stop

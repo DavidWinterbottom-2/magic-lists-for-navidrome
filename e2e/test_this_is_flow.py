@@ -5,7 +5,7 @@ renders in the app but never reached Navidrome isn't a playlist. The fake
 Navidrome runs in this process, so its state is readable directly.
 """
 
-import fake_navidrome
+from fakes import fake_navidrome
 from playwright.sync_api import expect
 
 
@@ -13,7 +13,14 @@ def open_this_is(page):
     page.goto("/")
     page.locator('a[data-page="this-is-artist"]').first.click()
     expect(page.locator("#this-is-content")).to_be_visible()
-    return page.locator("#artist-search-select")
+    select = page.locator("#artist-search-select")
+    # loadArtists() clears the current selection as it repopulates the list, so
+    # wait for the page's fetches to settle first — a selection made while one
+    # is in flight is silently undone. The option count is the same before and
+    # after a repopulate, so it can't stand in for this.
+    page.wait_for_load_state("networkidle")
+    expect(select.locator("option")).to_have_count(4)
+    return select
 
 
 def test_the_artist_list_comes_from_the_library(page):
