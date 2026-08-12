@@ -59,6 +59,7 @@ include = [
     "backend/track_scoring.py",
     "backend/lastfm_client.py",
     "backend/recipe_manager.py",
+    "backend/ai_response.py",
     "backend/errors.py",
 ]
 fail_under = 80

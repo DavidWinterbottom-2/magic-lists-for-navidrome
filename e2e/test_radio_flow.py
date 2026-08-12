@@ -40,11 +40,17 @@ def test_a_station_opens_with_its_seed_and_caps_that_artist(page):
     # Nothing to show before a station is built.
     expect(page.locator("#radio-results")).to_be_hidden()
     page.locator("#radio-artist-select").select_option(label="Alpha Waves")
-    page.locator("#create-radio-playlist-btn").click()
 
-    # Wait on the results panel rather than the toast: the toast self-dismisses
-    # after five seconds, so asserting on it races the build.
-    expect(page.locator("#radio-results")).to_be_visible(timeout=60_000)
+    # Wait for the build to actually come back. The toast self-dismisses after
+    # five seconds and the panel is rendered from the response, so anything
+    # else here races the request.
+    with page.expect_response(
+        lambda r: "/api/create_radio_playlist" in r.url, timeout=60_000
+    ) as response:
+        page.locator("#create-radio-playlist-btn").click()
+    assert response.value.status == 200, f"create returned {response.value.status}"
+
+    expect(page.locator("#radio-results")).to_be_visible(timeout=30_000)
 
     created = set(fake_navidrome.STATE.playlists) - before
     assert len(created) == 1, f"expected exactly one new playlist, got {created}"
@@ -73,10 +79,14 @@ def test_a_station_opens_with_its_seed_and_caps_that_artist(page):
 def test_the_station_suggests_albums_the_library_does_not_have(page):
     open_radio(page)
     page.locator("#radio-artist-select").select_option(label="Gamma Ray Kids")
-    page.locator("#create-radio-playlist-btn").click()
+
+    with page.expect_response(
+        lambda r: "/api/create_radio_playlist" in r.url, timeout=60_000
+    ):
+        page.locator("#create-radio-playlist-btn").click()
 
     results = page.locator("#radio-results")
-    expect(results).to_be_visible(timeout=60_000)
+    expect(results).to_be_visible(timeout=30_000)
     expect(page.locator("#radio-reasoning")).not_to_be_empty()
 
     # The suggestions are the point of the feature: what to buy so the next
