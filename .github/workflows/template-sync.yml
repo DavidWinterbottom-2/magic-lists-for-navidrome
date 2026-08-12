@@ -59,12 +59,23 @@ jobs:
             exit 0
           fi
 
+          # §2: a skills/standards-only sync touches no application code, but this
+          # repo's version-bumped check is unconditional (fires on every PR), so a
+          # sync PR that didn't bump the version could never merge. Bump the single
+          # whole-repo version source (the one bump-my-version config in
+          # pyproject.toml) inside the same commit. Over-bumping a docs-only PR is
+          # harmless — images deploy by SHA.
+          python3 -m pip install --quiet --upgrade bump-my-version
+          # --allow-dirty: the tree already carries the synced assets.
+          # --no-commit/--no-tag: the commit is made below with the synced files.
+          bump-my-version bump patch --allow-dirty --no-commit --no-tag
+
           branch="template-sync/assets"
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git checkout -B "$branch"
-          git add .claude/skills standards
+          git add .claude/skills standards pyproject.toml
           git commit -m "Sync shared skills and standards from devcontainer-sandbox template"
           # Plain --force, not --force-with-lease: the runner does a shallow
           # checkout of the default branch only, so it has no remote-tracking ref
@@ -87,6 +98,8 @@ jobs:
             echo 'from its canonical copy. This PR refreshes it. The synced set is declared'
             echo 'in `.github/template-sync.json` (`shared_skills` + `shared_docs`); the'
             echo 'repo'\''s own skills are left untouched.'
+            echo
+            echo 'The patch version is bumped automatically so the §2 version-bumped check passes.'
             echo
             echo 'Review the diff and merge to pick up the update.'
           } > "$body_file"
