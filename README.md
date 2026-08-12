@@ -610,15 +610,16 @@ change an entry in `AGENTS.md` and re-run it; CI fails if the two drift.
 <!-- BEGIN GENERATED docs-map — edit AGENTS.md, then run scripts/generate-docs-map.py -->
 | Document | What it directs | Points to |
 | --- | --- | --- |
-| [`AGENTS.md`](AGENTS.md) | The entry point. Project description, the exact commands, the rules that apply to every change, and pointers to everything below. Kept deliberately short — it is re-read on every request. | `.claude/skills`, `.env.example`, `.github/pull_request_template.md`, `.github/template-sync.json`, `CLAUDE.md`, `docs/architecture.md`, `docs/code-style.md`, `standards/REPO-STANDARDS.md` |
+| [`AGENTS.md`](AGENTS.md) | The entry point. Project description, the exact commands, the rules that apply to every change, and pointers to everything below. Kept deliberately short — it is re-read on every request. | `.claude/skills`, `.env.example`, `.github/pull_request_template.md`, `.github/template-sync.json`, `CLAUDE.md`, `docs/architecture.md`, `docs/code-style.md`, `e2e/README.md`, `standards/REPO-STANDARDS.md` |
 | [`docs/architecture.md`](docs/architecture.md) | How the app is organised and why it behaves as it does | — (leaf) |
-| [`docs/code-style.md`](docs/code-style.md) | Python style, logging, error handling | `docs/architecture.md` |
+| [`docs/code-style.md`](docs/code-style.md) | Python style, logging, error handling | `docs/architecture.md`, `e2e/README.md` |
 | [`standards/REPO-STANDARDS.md`](standards/REPO-STANDARDS.md) | Repo standards — branching, testing, versioning, design system | `.env.example`, `.github/pull_request_template.md`, `AGENTS.md`, `CLAUDE.md` |
 | [`CLAUDE.md`](CLAUDE.md) | Devcontainer, shared skills, template sync | `.claude/skills`, `.github/template-sync.json`, `standards/REPO-STANDARDS.md` |
 | [`.claude/skills/`](.claude/skills/) | Task procedures — opening a PR, code review, TDD — loaded on demand. **Vendored** | `.github/pull_request_template.md` |
 | [`.github/pull_request_template.md`](.github/pull_request_template.md) | The shape every PR description takes | — (leaf) |
 | [`.github/template-sync.json`](.github/template-sync.json) | Which skills and docs are vendored, and from where | — (leaf) |
 | [`.env.example`](.env.example) | Every configuration variable, and what it does | — (leaf) |
+| [`e2e/README.md`](e2e/README.md) | Writing browser tests — the fakes, and the traps that make them pass vacuously | — (leaf) |
 <!-- END GENERATED docs-map -->
 
 Two things are enforced by CI rather than described in prose, so an agent finds

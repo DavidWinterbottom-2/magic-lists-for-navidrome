@@ -11,6 +11,20 @@ themselves — so neither column can drift from reality by hand.
 
 To change the map, edit the table in AGENTS.md and re-run this. Never edit the
 generated block in README.md.
+
+`--check` enforces two different things, and both are needed:
+
+  consistency  — the README's table matches AGENTS.md and the files on disk.
+  completeness — no markdown exists that the table doesn't account for. Without
+                 this, a new doc could be added and the gate stays green while
+                 the map silently omits it, which is the exact failure the map
+                 is meant to prevent. It caught e2e/README.md the day it was
+                 added.
+
+Possible candidate for the devcontainer-sandbox template, as a shared skill
+rather than a vendored file — the map's *content* is per-repo, so only the
+generator travels. Not proposed yet: it wants a few weeks of use here first, and
+the completeness gap above is the sort of thing that only shows up with time.
 """
 
 import argparse
@@ -31,6 +45,22 @@ END = "<!-- END GENERATED docs-map -->"
 # is the only hand-written text in the generated table.
 ROOT_DOC = "AGENTS.md"
 ROOT_SUMMARY = "The entry point. Project description, the exact commands, the rules that apply to every change, and pointers to everything below. Kept deliberately short — it is re-read on every request."
+
+# Markdown that is deliberately not an entry in the map. Everything else must be
+# listed, or --check fails: consistency between AGENTS.md and the README says
+# nothing about whether a NEW doc was added and never mentioned, and a map that
+# silently omits a file is the failure the map exists to prevent.
+EXEMPT_FILES = {
+    "AGENTS.md",        # the root itself
+    "README.md",        # human-facing
+    "SETUP.md",         # human-facing
+    "OLLAMA_SETUP.md",  # human-facing
+    "CLAUDE.md",        # listed as an entry, and its own root
+}
+# Directories covered by a single entry, or owned elsewhere entirely. Hidden
+# directories are skipped wholesale (see scan below), which covers .claude/,
+# .github/ and the various tool caches that ship their own README.
+EXEMPT_DIRS = ("standards/", "node_modules/", "venv/", "htmlcov/", "test-results/")
 
 TABLE_ROW = re.compile(r"^\|(?P<purpose>[^|]+)\|(?P<target>[^|]+)\|\s*$")
 LINK = re.compile(r"\]\((?P<path>[^)#]+)(?:#[^)]*)?\)")
@@ -147,6 +177,22 @@ def splice(text, block):
     return f"{head}{BEGIN}\n{block}\n{END}{tail}"
 
 
+def unlisted_docs(canonical):
+    """Markdown in the repo that no entry in the map accounts for."""
+    listed = [normalise(p) for p in canonical]
+    missing = []
+    for path in sorted(ROOT.rglob("*.md")):
+        rel = path.relative_to(ROOT)
+        if any(part.startswith(".") for part in rel.parts):
+            continue  # .claude/, .github/, and tool caches with their own README
+        rel = str(rel)
+        if rel in EXEMPT_FILES or rel.startswith(EXEMPT_DIRS):
+            continue
+        if not owning_entry(rel, listed):
+            missing.append(rel)
+    return missing
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--check", action="store_true",
@@ -155,6 +201,16 @@ def main():
 
     current = README.read_text()
     updated = splice(current, render())
+
+    canonical = [ROOT_DOC] + [path for path, _, _ in parse_canonical()]
+    missing = unlisted_docs(canonical)
+    if missing:
+        print("Documentation not accounted for in AGENTS.md's table:", file=sys.stderr)
+        for path in missing:
+            print(f"  {path}", file=sys.stderr)
+        print("Add it to the table, or to EXEMPT_FILES/EXEMPT_DIRS if it is not "
+              "meant to direct an agent.", file=sys.stderr)
+        return 1
 
     if args.check:
         if current != updated:
