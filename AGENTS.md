@@ -29,7 +29,8 @@ The app serves on **4545**. Work in the devcontainer (`.devcontainer/`).
 - **Bump the version** with `bump-my-version` — CI fails a PR that doesn't,
   including docs- and CI-only ones. Over-bumping is harmless; images deploy by
   SHA.
-- **One logical change per PR**, described as Summary / Changes / Validation.
+- **One logical change per PR**, described as Summary / Changes / Validation —
+  the sections in [`.github/pull_request_template.md`](.github/pull_request_template.md).
 - **Never hand-edit vendored files** — `standards/`, `.claude/skills/`, and the
   design-system CSS/JS in the frontend. They sync from upstream; changes belong
   there. See [CLAUDE.md](CLAUDE.md).
@@ -60,7 +61,3 @@ before changing playlist generation.
 | Devcontainer, shared skills, template sync | [`CLAUDE.md`](CLAUDE.md) |
 | What the app does, and how it deploys | [`README.md`](README.md) |
 | Configuring and verifying a running instance | [`SETUP.md`](SETUP.md) |
-
-Known gaps against the standards, worth closing rather than working around: CI
-has no coverage gate (§4 wants ≥80% enforced) and no browser-driven e2e suite
-despite this being a web UI.

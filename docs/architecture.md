@@ -87,11 +87,45 @@ that for the user rather than swallowing it silently.
 A curation prompt change lands as a **new file** with the registry pointed at it —
 not as an edit to the existing one. That way a regression traces to a specific
 recipe and rolls back by flipping a single registry entry. Superseded recipes
-move to the archive directory rather than being deleted.
+move to the archive directory rather than being deleted. See below.
 
-Recipes support `{{PLACEHOLDER}}` substitution and `{{MATH:...}}` expressions
-evaluated against the requested track count, so proportional rules (a 20% cap, a
-40% first tranche) scale with playlist length.
+## Recipes
+
+A recipe is the JSON definition of how one playlist type is curated: the prompt,
+the model settings, and the numeric strategy behind it. `registry.json` maps each
+playlist type to the recipe file currently in force, which is what makes a
+version swap a one-line change.
+
+Every recipe file carries the same seven keys:
+
+| Key | What it holds |
+| --- | --- |
+| `recipe_id` | Identifier including the version, e.g. `Radio_v1_001` |
+| `name` | Human-readable description of the playlist type |
+| `user_parameters` | Template variables the caller fills, e.g. `{{RADIO_SEED}}` |
+| `llm_config` | `temperature`, `max_output_tokens` |
+| `model_instructions` | The prompt — curation rules, and the exact JSON response shape required |
+| `global_strategy` | `final_track_count`, `tie_breaker_priority`, `weights`, and the `waiting` caps (per-artist, consecutive-artist, minimum artists represented) |
+| `processing_steps` | Ordered tranches, each with a `priority_score`, a `target_track_count` and optional `filters` |
+
+Two substitutions are applied before the prompt is sent: `{{PLACEHOLDER}}` for
+user parameters, and `{{MATH:...}}` for expressions evaluated against the
+requested track count — so proportional rules (a 20% artist cap, a 40% first
+tranche) scale with playlist length instead of being hardcoded per size.
+
+**All four playlist types are LLM-curated**, Re-Discover included — it runs as
+two recipes, a candidate-selection phase and a curation phase.
+
+### Adding or changing a recipe
+
+1. Copy the current file to the next version (`radio_v1_001` → `radio_v1_002`)
+   and edit the copy. Never edit a recipe in place.
+2. Point the playlist type at it in `registry.json`.
+3. Move the superseded file to the archive directory.
+4. Check it parses: `GET /api/recipes` lists what's available, and
+   `GET /api/recipes/validate` validates every recipe file.
+
+Rolling back is step 2 in reverse.
 
 ## Scheduling and rebuilds
 

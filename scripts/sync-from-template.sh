@@ -5,7 +5,7 @@
 # asset are pulled, both declared in .github/template-sync.json:
 #
 #   - shared Claude Code skills  → .claude/skills/<name>   ("shared_skills")
-#   - shared standards docs      → standards/<file>        ("shared_docs")
+#   - shared docs                → any src→dest path pair  ("shared_docs")
 #
 # The repo's own skills ("own_skills") are left untouched.
 #

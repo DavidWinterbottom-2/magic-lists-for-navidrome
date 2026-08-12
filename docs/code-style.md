@@ -12,11 +12,9 @@ Python practice — this file documents what an agent would otherwise get wrong.
   the surrounding style rather than mixing both in one module.
 - **Async** — `async def` for anything doing I/O; SQLite through `aiosqlite`,
   always with parameterised queries.
-- **Naming** — `snake_case` for functions, variables and modules, `PascalCase`
-  for classes, `UPPER_CASE` for constants, `_leading_underscore` for private
-  helpers.
-- **Formatting** — 4-space indent, no enforced line length. There is no
-  formatter in CI, so don't reformat code you aren't otherwise changing.
+- **Formatting** — no line-length limit and **no formatter in CI**, so don't
+  reformat code you aren't otherwise changing. A diff that reflows an untouched
+  function is noise in review.
 
 ## Errors
 
@@ -74,12 +72,27 @@ against reads as noise to the next person deciding whether it's safe to remove.
 
 ## Tests
 
-- Stdlib `unittest`, one module per area under `tests/`, with a docstring saying
-  what the module covers and how to run it.
+**Where this is heading.** The agreed direction (REPO-STANDARDS §4) is
+`pytest --cov=backend --cov-fail-under=80` in CI, plus a browser-driven e2e suite
+for the web UI. Neither is wired up yet; CI currently runs the suite with no
+coverage floor. That's a known gap, not the intended end state — so write new
+tests to run under **both** runners, which plain `unittest.TestCase` classes
+already do:
+
+```bash
+python -m unittest discover -s tests -p 'test_*.py' -v   # today, in CI
+python -m pytest tests/ -v                               # also passes
+```
+
+Avoid anything that would need porting later: no `unittest`-only helpers where a
+plain assertion works, and no reliance on test execution order.
+
+- One module per area under `tests/`, with a docstring saying what it covers and
+  how to run it.
 - **Fakes, not mocking libraries.** The suite uses hand-written fake clients
-  (`FakeNav` and friends) and plain dicts for tracks, so it stays dependency-free
-  and runs without a live Navidrome, Last.fm or AI provider. Keep it that way —
-  the existing tests import nothing beyond `unittest` and the module under test.
+  (`FakeNav` and friends) and plain dicts for tracks, so it runs without a live
+  Navidrome, Last.fm or AI provider. Keep that — it survives the pytest move
+  unchanged, and it's why the tests run in under two seconds.
 - The valuable tests here cover the guarantees rather than the model: that the
   seed leads, that the cap holds, that a thin pool yields a short playlist and a
   correct explanation. Test those directly — they're pure functions over track
