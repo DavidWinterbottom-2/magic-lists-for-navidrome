@@ -63,5 +63,3 @@ before changing playlist generation.
 | Python style, logging, error handling | [`docs/code-style.md`](docs/code-style.md) |
 | Repo standards — branching, testing, versioning, design system | [`standards/REPO-STANDARDS.md`](standards/REPO-STANDARDS.md) |
 | Devcontainer, shared skills, template sync | [`CLAUDE.md`](CLAUDE.md) |
-| What the app does, and how it deploys | [`README.md`](README.md) |
-| Configuring and verifying a running instance | [`SETUP.md`](SETUP.md) |
