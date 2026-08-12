@@ -122,22 +122,17 @@ two recipes, a candidate-selection phase and a curation phase.
    and edit the copy. Never edit a recipe in place.
 2. Point the playlist type at it in `registry.json`.
 3. Move the superseded file to the archive directory.
-4. Check it parses: `GET /api/recipes` lists what's available, and
-   `GET /api/recipes/validate` loads every recipe file.
+4. Check it: `GET /api/recipes` lists what's registered, and
+   `GET /api/recipes/validate` validates every registered recipe — required
+   fields, section types, the temperature and token-budget ranges, and any
+   placeholder `apply_recipe` has no substitution for.
 
 Rolling back is step 2 in reverse.
 
-> **Known bug — the validator checks a superseded schema.**
-> `RecipeManager.validate_recipe` still requires `version`, `description`,
-> `inputs` and `strategy_notes`, and reads `prompt_template` / `llm_params` —
-> the shape recipes had before the seven-key schema above. No current recipe has
-> those fields, so the endpoint reports the same four "missing required field"
-> errors for **every** recipe, and `/api/recipes` reports each one as
-> `uses_llm: false` with null metadata.
->
-> Treat those errors as noise for now: the endpoint is still useful for
-> confirming a new recipe file *parses*, but not for confirming it's valid.
-> Fixing the validator to match the real schema is worth doing on its own.
+The validator recognises **both formats**. Archived recipes still use the
+pre-2026 shape (`prompt_template` / `llm_params` / `inputs`) and `apply_recipe`
+still runs them, so they're checked against those rules rather than reported as
+broken current-format recipes.
 
 ## Scheduling and rebuilds
 

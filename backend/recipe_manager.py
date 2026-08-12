@@ -1,7 +1,34 @@
 import json
 import os
+import re
 from typing import Dict, Any, Optional, List
 from pathlib import Path
+
+# Fields every current-format recipe carries. See docs/architecture.md.
+CURRENT_REQUIRED_FIELDS = [
+    "recipe_id", "name", "user_parameters", "llm_config",
+    "model_instructions", "global_strategy", "processing_steps",
+]
+
+# Fields the pre-2026 format carried. Recipes in recipes/archive/ still use it,
+# and apply_recipe still runs them, so validation has to recognise both rather
+# than reporting every archived recipe as broken.
+LEGACY_REQUIRED_FIELDS = ["version", "description", "inputs", "strategy_notes"]
+
+# The placeholders apply_recipe knows how to substitute. Anything else in a
+# recipe's model_instructions ships to the model as literal `{{FOO}}`.
+KNOWN_PLACEHOLDERS = {
+    "TARGET_ARTIST", "TARGET_GENRE", "RADIO_SEED", "DESIRED_TRACK_COUNT",
+    "CANDIDATE_TRACKS_JSON", "ANALYSIS_SUMMARY",
+}
+
+PLACEHOLDER = re.compile(r"\{\{(?!MATH:)([A-Z_]+)\}\}")
+
+
+def is_current_format(recipe: Dict[str, Any]) -> bool:
+    """Current-format recipes drive the model through `model_instructions`."""
+    return "model_instructions" in recipe or "llm_config" in recipe
+
 
 class RecipeManager:
     """Manages playlist generation recipes and their application"""
@@ -218,13 +245,24 @@ class RecipeManager:
         for playlist_type, recipe_filename in registry.items():
             try:
                 recipe = self._load_recipe(recipe_filename)
-                recipes_info[playlist_type] = {
-                    "filename": recipe_filename,
-                    "version": recipe.get("version"),
-                    "description": recipe.get("description"),
-                    "inputs": recipe.get("inputs", []),
-                    "uses_llm": recipe.get("prompt_template") is not None
-                }
+                if is_current_format(recipe):
+                    recipes_info[playlist_type] = {
+                        "filename": recipe_filename,
+                        "format": "current",
+                        "recipe_id": recipe.get("recipe_id"),
+                        "name": recipe.get("name"),
+                        "inputs": sorted(recipe.get("user_parameters", {}).keys()),
+                        "uses_llm": bool(recipe.get("model_instructions")),
+                    }
+                else:
+                    recipes_info[playlist_type] = {
+                        "filename": recipe_filename,
+                        "format": "legacy",
+                        "recipe_id": recipe.get("version"),
+                        "name": recipe.get("description"),
+                        "inputs": recipe.get("inputs", []),
+                        "uses_llm": recipe.get("prompt_template") is not None,
+                    }
             except Exception as e:
                 recipes_info[playlist_type] = {
                     "filename": recipe_filename,
@@ -234,49 +272,91 @@ class RecipeManager:
         return recipes_info
     
     def validate_recipe(self, recipe_filename: str) -> List[str]:
-        """Validate a recipe file and return any errors"""
-        errors = []
-        
+        """Validate a recipe file and return any errors.
+
+        Validates against whichever format the file is in. The current format is
+        the seven-key shape documented in docs/architecture.md; the legacy format
+        (prompt_template / llm_params / inputs) survives in recipes/archive/ and
+        is still runnable, so it gets its own checks rather than being reported
+        as a broken current-format recipe.
+        """
         try:
             recipe = self._load_recipe(recipe_filename)
-            
-            # Check required fields
-            required_fields = ["version", "description", "inputs", "strategy_notes"]
-            for field in required_fields:
-                if field not in recipe:
-                    errors.append(f"Missing required field: {field}")
-            
-            # Check that inputs is a list
-            if "inputs" in recipe and not isinstance(recipe["inputs"], list):
-                errors.append("'inputs' must be a list")
-            
-            # Check prompt template if present
-            if recipe.get("prompt_template"):
-                # Try to identify placeholders in the template
-                import re
-                placeholders = re.findall(r'\{(\w+)\}', recipe["prompt_template"])
-                inputs = recipe.get("inputs", [])
-                
-                # Check if all placeholders have corresponding inputs (allowing for some flexibility)
-                for placeholder in placeholders:
-                    if placeholder not in inputs and placeholder not in ["tracks_data", "num_tracks"]:
-                        errors.append(f"Placeholder '{placeholder}' in prompt_template not found in inputs")
-            
-            # Validate LLM params if present
-            if recipe.get("llm_params"):
-                llm_params = recipe["llm_params"]
-                if not isinstance(llm_params, dict):
-                    errors.append("'llm_params' must be an object")
-                
-                # Check for valid temperature range
-                if "temperature" in llm_params:
-                    temp = llm_params["temperature"]
-                    if not isinstance(temp, (int, float)) or temp < 0 or temp > 2:
-                        errors.append("'temperature' must be a number between 0 and 2")
-        
         except Exception as e:
-            errors.append(f"Failed to load recipe: {e}")
-        
+            return [f"Failed to load recipe: {e}"]
+
+        if is_current_format(recipe):
+            return self._validate_current(recipe)
+        return self._validate_legacy(recipe)
+
+    def _validate_current(self, recipe: Dict[str, Any]) -> List[str]:
+        errors = []
+
+        for field in CURRENT_REQUIRED_FIELDS:
+            if field not in recipe:
+                errors.append(f"Missing required field: {field}")
+
+        for field, expected, label in (
+            ("user_parameters", dict, "an object"),
+            ("llm_config", dict, "an object"),
+            ("global_strategy", dict, "an object"),
+            ("processing_steps", list, "a list"),
+        ):
+            if field in recipe and not isinstance(recipe[field], expected):
+                errors.append(f"'{field}' must be {label}")
+
+        llm_config = recipe.get("llm_config")
+        if isinstance(llm_config, dict):
+            if "temperature" in llm_config:
+                temp = llm_config["temperature"]
+                if not isinstance(temp, (int, float)) or not 0 <= temp <= 2:
+                    errors.append("'temperature' must be a number between 0 and 2")
+            if "max_output_tokens" in llm_config:
+                tokens = llm_config["max_output_tokens"]
+                if not isinstance(tokens, int) or tokens <= 0:
+                    errors.append("'max_output_tokens' must be a positive integer")
+
+        # An unrecognised placeholder is never substituted, so the model receives
+        # a literal `{{FOO}}` — silent at build time, visible only in bad output.
+        instructions = recipe.get("model_instructions")
+        if isinstance(instructions, str):
+            for name in sorted(set(PLACEHOLDER.findall(instructions))):
+                if name not in KNOWN_PLACEHOLDERS:
+                    errors.append(
+                        f"Unknown placeholder '{{{{{name}}}}}' in model_instructions "
+                        "— apply_recipe has no substitution for it"
+                    )
+
+        return errors
+
+    def _validate_legacy(self, recipe: Dict[str, Any]) -> List[str]:
+        errors = []
+
+        for field in LEGACY_REQUIRED_FIELDS:
+            if field not in recipe:
+                errors.append(f"Missing required field: {field}")
+
+        if "inputs" in recipe and not isinstance(recipe["inputs"], list):
+            errors.append("'inputs' must be a list")
+
+        if recipe.get("prompt_template"):
+            placeholders = re.findall(r"\{(\w+)\}", recipe["prompt_template"])
+            inputs = recipe.get("inputs", [])
+            for placeholder in placeholders:
+                if placeholder not in inputs and placeholder not in ("tracks_data", "num_tracks"):
+                    errors.append(
+                        f"Placeholder '{placeholder}' in prompt_template not found in inputs"
+                    )
+
+        llm_params = recipe.get("llm_params")
+        if llm_params:
+            if not isinstance(llm_params, dict):
+                errors.append("'llm_params' must be an object")
+            elif "temperature" in llm_params:
+                temp = llm_params["temperature"]
+                if not isinstance(temp, (int, float)) or not 0 <= temp <= 2:
+                    errors.append("'temperature' must be a number between 0 and 2")
+
         return errors
     
     def clear_cache(self):

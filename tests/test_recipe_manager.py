@@ -195,5 +195,97 @@ class ApplyRecipeTests(RecipeDirMixin, unittest.TestCase):
         self.assertIn("{{RADIO_SEED}}", manager.get_recipe("radio")["model_instructions"])
 
 
+LEGACY_RECIPE = {
+    "version": "v1.003",
+    "description": "A pre-2026 recipe",
+    "inputs": ["artist_name"],
+    "strategy_notes": {"approach": "play count"},
+    "prompt_template": "Build a playlist for {artist_name} with {num_tracks} tracks.",
+    "llm_params": {"temperature": 0.7, "max_tokens": 1000},
+}
+
+
+class ValidationTests(RecipeDirMixin, unittest.TestCase):
+    """The validator has to recognise both recipe formats.
+
+    The current seven-key format is what every live recipe uses; the legacy
+    format survives in recipes/archive/ and apply_recipe still runs it. Checking
+    only one shape means reporting every file in the other as broken — which is
+    exactly what this validator used to do to all six live recipes.
+    """
+
+    def errors_for(self, recipe):
+        return self.make_manager(recipes={"test.json": recipe}).validate_recipe("test.json")
+
+    def test_a_valid_current_recipe_has_no_errors(self):
+        self.assertEqual(self.errors_for(RECIPE), [])
+
+    def test_a_valid_legacy_recipe_has_no_errors(self):
+        self.assertEqual(self.errors_for(LEGACY_RECIPE), [])
+
+    def test_a_missing_current_field_is_reported(self):
+        errors = self.errors_for({k: v for k, v in RECIPE.items() if k != "processing_steps"})
+        self.assertIn("Missing required field: processing_steps", errors)
+
+    def test_a_missing_legacy_field_is_reported(self):
+        errors = self.errors_for({k: v for k, v in LEGACY_RECIPE.items() if k != "strategy_notes"})
+        self.assertIn("Missing required field: strategy_notes", errors)
+
+    def test_a_legacy_recipe_is_not_judged_by_current_rules(self):
+        # The regression: every legacy field name is absent from a current recipe
+        # and vice versa, so cross-checking produces four bogus errors.
+        self.assertNotIn("Missing required field: recipe_id", self.errors_for(LEGACY_RECIPE))
+        self.assertNotIn("Missing required field: version", self.errors_for(RECIPE))
+
+    def test_an_out_of_range_temperature_is_reported(self):
+        errors = self.errors_for({**RECIPE, "llm_config": {"temperature": 3.5}})
+        self.assertIn("'temperature' must be a number between 0 and 2", errors)
+
+    def test_a_nonsense_token_budget_is_reported(self):
+        errors = self.errors_for({**RECIPE, "llm_config": {"max_output_tokens": 0}})
+        self.assertIn("'max_output_tokens' must be a positive integer", errors)
+
+    def test_wrongly_typed_sections_are_reported(self):
+        errors = self.errors_for({**RECIPE, "processing_steps": {"not": "a list"}})
+        self.assertIn("'processing_steps' must be a list", errors)
+
+    def test_an_unknown_placeholder_is_reported(self):
+        # Nothing substitutes {{MOOD}}, so the model would receive it literally —
+        # invisible at build time, visible only as a bad playlist.
+        errors = self.errors_for({**RECIPE, "model_instructions": "Build for {{MOOD}}"})
+        self.assertEqual(len(errors), 1)
+        self.assertIn("{{MOOD}}", errors[0])
+
+    def test_known_placeholders_and_math_are_accepted(self):
+        instructions = ("{{RADIO_SEED}} {{TARGET_ARTIST}} {{TARGET_GENRE}} "
+                        "{{DESIRED_TRACK_COUNT}} {{MATH:ceil(DESIRED_TRACK_COUNT*0.4)}}")
+        self.assertEqual(self.errors_for({**RECIPE, "model_instructions": instructions}), [])
+
+    def test_an_unparseable_file_reports_a_load_failure(self):
+        errors = self.make_manager(recipes={"test.json": "{ not json"}).validate_recipe("test.json")
+        self.assertEqual(len(errors), 1)
+        self.assertIn("Failed to load recipe", errors[0])
+
+
+class RecipeListingTests(RecipeDirMixin, unittest.TestCase):
+    def test_current_recipe_metadata_is_reported(self):
+        info = self.make_manager().list_available_recipes()["radio"]
+        self.assertEqual(info["format"], "current")
+        self.assertEqual(info["recipe_id"], "Test_v1_001")
+        self.assertEqual(info["name"], "Test recipe")
+        self.assertTrue(info["uses_llm"])
+
+    def test_legacy_recipe_metadata_is_reported(self):
+        manager = self.make_manager(recipes={"test.json": LEGACY_RECIPE})
+        info = manager.list_available_recipes()["radio"]
+        self.assertEqual(info["format"], "legacy")
+        self.assertEqual(info["recipe_id"], "v1.003")
+        self.assertTrue(info["uses_llm"])
+
+    def test_a_broken_recipe_is_reported_without_taking_the_listing_down(self):
+        manager = self.make_manager(registry={"radio": "gone.json"}, recipes={"test.json": RECIPE})
+        self.assertIn("error", manager.list_available_recipes()["radio"])
+
+
 if __name__ == "__main__":
     unittest.main()

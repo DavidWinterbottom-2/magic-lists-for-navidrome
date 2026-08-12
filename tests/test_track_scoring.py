@@ -121,15 +121,19 @@ class FilterThresholdTests(unittest.TestCase):
         self.assertEqual(calculate_filter_threshold(50), 8)
         self.assertEqual(calculate_filter_threshold(100), 6)
 
-    def test_above_one_hundred_the_formula_takes_over(self):
-        # NOTE: this pins current behaviour, which contradicts the docstring's
-        # "diminishing multiplier, cap at 5x" — 600/size*6 gives 18 at size 200,
-        # i.e. a WIDER pool than the 6x used at size 100. Only above ~600 does
-        # the floor of 5 bite. Worth fixing; pinned here so a fix is deliberate
-        # rather than accidental.
-        self.assertEqual(calculate_filter_threshold(200), 18)
-        self.assertEqual(calculate_filter_threshold(600), 6)
+    def test_above_one_hundred_it_settles_at_the_floor(self):
+        self.assertEqual(calculate_filter_threshold(200), 5)
+        self.assertEqual(calculate_filter_threshold(600), 5)
         self.assertEqual(calculate_filter_threshold(1000), 5)
+
+    def test_the_multiplier_never_widens_as_the_playlist_grows(self):
+        # The regression this guards: `600 / size * 6` returned 18 at size 200,
+        # a wider pool than the 6x used at size 100, so filtering never engaged
+        # for large playlists. Monotonicity is the property that was violated.
+        sizes = [10, 25, 26, 50, 51, 100, 101, 200, 500, 1000]
+        multipliers = [calculate_filter_threshold(s) for s in sizes]
+        self.assertEqual(multipliers, sorted(multipliers, reverse=True))
+        self.assertTrue(all(m >= 5 for m in multipliers))
 
 
 class SmartFilteringGateTests(unittest.TestCase):
