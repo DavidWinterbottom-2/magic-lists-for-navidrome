@@ -15,6 +15,7 @@ python -m uvicorn backend.main:app --host 0.0.0.0 --port 4545 --reload
 pytest -q --cov=backend --cov-report=term-missing        # fails under 80% on core
 pytest tests/test_radio.py -q                            # one module
 python -m unittest discover -s tests -p 'test_*.py'      # must also pass
+python -m pytest e2e/ --browser chromium                 # browser end-to-end
 ruff check --select=E9,F63,F7,F82 .                      # the subset CI enforces
 bump-my-version bump patch
 docker compose up -d --build

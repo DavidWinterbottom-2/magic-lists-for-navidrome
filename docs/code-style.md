@@ -72,7 +72,13 @@ against reads as noise to the next person deciding whether it's safe to remove.
 
 ## Tests
 
-**pytest is the gate; the tests stay runner-agnostic.** CI runs
+Two suites: `tests/` is the fast unit suite, `e2e/` drives the real app in a
+browser (see [`e2e/README.md`](../e2e/README.md) before adding to it — the
+fakes and the `.hidden` stub have traps worth knowing about). Both run in CI.
+`e2e/` deliberately sits outside `tests/`, so the unit suite never acquires a
+browser dependency.
+
+**pytest is the gate; the unit tests stay runner-agnostic.** CI runs
 `pytest --cov=backend` and fails below **80% coverage of the core modules**
 (REPO-STANDARDS §4). The gated set and the reasoning behind it live in
 `[tool.coverage.report]` in `pyproject.toml`.
