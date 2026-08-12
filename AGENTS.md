@@ -6,18 +6,22 @@ frontend, SQLite.
 
 ## Commands
 
-Dependencies come from `requirements.txt` (this is not an installable package),
-and tests are **stdlib unittest** — there is no pytest or coverage config.
+Dependencies come from `requirements.txt` + `requirements-dev.txt` — this is an
+app, not an installable package, so there's no `pip install -e .`.
 
 ```bash
+pip install -r requirements.txt -r requirements-dev.txt
 python -m uvicorn backend.main:app --host 0.0.0.0 --port 4545 --reload
-python -m unittest discover -s tests -p 'test_*.py' -v   # whole suite
-python -m unittest tests.test_radio -v                   # one module
+pytest -q --cov=backend --cov-report=term-missing        # fails under 80% on core
+pytest tests/test_radio.py -q                            # one module
+python -m unittest discover -s tests -p 'test_*.py'      # must also pass
 ruff check --select=E9,F63,F7,F82 .                      # the subset CI enforces
-python -m compileall backend tests
-bump-my-version bump patch                               # pip install bump-my-version
+bump-my-version bump patch
 docker compose up -d --build
 ```
+
+Tests are written as plain `unittest.TestCase` classes and must pass under
+**both** runners — see [`docs/code-style.md`](docs/code-style.md).
 
 The app serves on **4545**. Work in the devcontainer (`.devcontainer/`).
 

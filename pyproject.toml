@@ -16,3 +16,46 @@ current_version = "0.1.2"
 filename = "pyproject.toml"
 search = 'version = "{current_version}"'
 replace = 'version = "{new_version}"'
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# The suite is stdlib unittest.TestCase classes, which pytest collects natively.
+# Keep it that way: the tests must pass under `python -m unittest discover` too,
+# so nothing here may become load-bearing.
+python_files = ["test_*.py"]
+
+
+[tool.coverage.run]
+source = ["backend"]
+# The scoring functions log heavily via print(); nothing here needs branch
+# coverage's extra bookkeeping to be meaningful.
+branch = false
+
+
+# REPO-STANDARDS §4 requires ≥80% coverage of the component's CORE code, enforced
+# in CI. `include` below is that core: the pure logic that encodes the product
+# rules — pooling and the post-curation guarantees, engagement scoring, recipe
+# substitution, Last.fm parsing.
+#
+# Deliberately outside the gate:
+#   - main.py, navidrome_client.py, rediscover.py, ai_client.py, database.py,
+#     auth.py, services/* — route and I/O layers whose real bar under §4 is
+#     integration and browser-driven e2e tests, not unit coverage. Whole-backend
+#     coverage is ~35% and CI prints it on every run, so the gap stays visible.
+#   - schemas.py — Pydantic model declarations, "covered" by import alone.
+#     Including it would inflate the number without testing anything.
+#
+# The floor is 80 and never moves down. Widen `include` as the layers above grow
+# real tests.
+[tool.coverage.report]
+include = [
+    "backend/radio.py",
+    "backend/track_scoring.py",
+    "backend/lastfm_client.py",
+    "backend/recipe_manager.py",
+    "backend/errors.py",
+]
+fail_under = 80
+show_missing = true
+skip_covered = false
