@@ -2,6 +2,7 @@ import httpx
 import os
 import json
 from typing import List, Dict, Any, Union, Tuple, Optional
+from .ai_response import extract_json_payload
 from .recipe_manager import recipe_manager
 from .services.ai_providers import get_ai_provider
 
@@ -214,55 +215,10 @@ Return JSON: {{"track_ids": [indices], "reasoning": "summary"}}"""
 
             # Parse the JSON response with comprehensive validation
             try:
-                # Clean up the response and extract JSON
-                cleaned_content = content.strip()
-
-                # Remove markdown code fences if present
-                if cleaned_content.startswith("```json"):
-                    cleaned_content = cleaned_content[7:]  # Remove ```json
-                if cleaned_content.startswith("```"):
-                    cleaned_content = cleaned_content[3:]   # Remove ```
-                if cleaned_content.endswith("```"):
-                    cleaned_content = cleaned_content[:-3]  # Remove trailing ```
-
-                cleaned_content = cleaned_content.strip()
-
-                # Extract JSON from mixed text/JSON response
-                import re
-
-                # Try to find JSON object first (new format): {"track_ids": [...], "reasoning": "..."}
-                json_object_match = re.search(r'\{.*?"track_ids".*?\}', cleaned_content, re.DOTALL)
-                if json_object_match:
-                    json_str = json_object_match.group(0)
-                    print(f"🔍 Extracted JSON object: {json_str[:100]}...")
-                else:
-                    # Try to find JSON array (legacy format): [1, 2, 3, ...]
-                    json_array_match = re.search(r'\[([\d\s,]+)\]', cleaned_content, re.DOTALL)
-                    if json_array_match:
-                        json_str = json_array_match.group(0)
-                        print(f"🔍 Extracted JSON array: {json_str[:100]}...")
-                    else:
-                        # No JSON found, try to parse the whole cleaned content
-                        json_str = cleaned_content
-                        print(f"🔍 Using entire cleaned content for JSON parsing")
-
-                # Clean up the extracted JSON
-                lines = json_str.split('\n')
-                cleaned_lines = []
-
-                for line in lines:
-                    # Remove // comments but preserve URLs like http://
-                    if '//' in line and 'http://' not in line and 'https://' not in line:
-                        comment_pos = line.find('//')
-                        line = line[:comment_pos].rstrip()
-
-                    # Remove trailing commas before closing brackets
-                    line = re.sub(r',(\s*[\]}])', r'\1', line)
-
-                    if line.strip():  # Only add non-empty lines
-                        cleaned_lines.append(line)
-
-                final_json = '\n'.join(cleaned_lines).strip()
+                # Salvage the JSON out of whatever the model returned — fences,
+                # preamble, trailing commas and nested objects all handled in
+                # one place (backend/ai_response.py).
+                final_json = extract_json_payload(content)
 
                 # Try to parse the extracted JSON
                 response_data = json.loads(final_json)
@@ -514,55 +470,10 @@ Return JSON: {{"track_ids": [indices], "reasoning": "summary"}}"""
 
             # Parse the JSON response with comprehensive validation
             try:
-                # Clean up the response and extract JSON
-                cleaned_content = content.strip()
-
-                # Remove markdown code fences if present
-                if cleaned_content.startswith("```json"):
-                    cleaned_content = cleaned_content[7:]  # Remove ```json
-                if cleaned_content.startswith("```"):
-                    cleaned_content = cleaned_content[3:]   # Remove ```
-                if cleaned_content.endswith("```"):
-                    cleaned_content = cleaned_content[:-3]  # Remove trailing ```
-
-                cleaned_content = cleaned_content.strip()
-
-                # Extract JSON from mixed text/JSON response
-                import re
-
-                # Try to find JSON object first (new format): {"track_ids": [...], "reasoning": "..."}
-                json_object_match = re.search(r'\{.*?"track_ids".*?\}', cleaned_content, re.DOTALL)
-                if json_object_match:
-                    json_str = json_object_match.group(0)
-                    print(f"🔍 Extracted JSON object: {json_str[:100]}...")
-                else:
-                    # Try to find JSON array (legacy format): [1, 2, 3, ...]
-                    json_array_match = re.search(r'\[([\d\s,]+)\]', cleaned_content, re.DOTALL)
-                    if json_array_match:
-                        json_str = json_array_match.group(0)
-                        print(f"🔍 Extracted JSON array: {json_str[:100]}...")
-                    else:
-                        # No JSON found, try to parse the whole cleaned content
-                        json_str = cleaned_content
-                        print(f"🔍 Using entire cleaned content for JSON parsing")
-
-                # Clean up the extracted JSON
-                lines = json_str.split('\n')
-                cleaned_lines = []
-
-                for line in lines:
-                    # Remove // comments but preserve URLs like http://
-                    if '//' in line and 'http://' not in line and 'https://' not in line:
-                        comment_pos = line.find('//')
-                        line = line[:comment_pos].rstrip()
-
-                    # Remove trailing commas before closing brackets
-                    line = re.sub(r',(\s*[\]}])', r'\1', line)
-
-                    if line.strip():  # Only add non-empty lines
-                        cleaned_lines.append(line)
-
-                final_json = '\n'.join(cleaned_lines).strip()
+                # Salvage the JSON out of whatever the model returned — fences,
+                # preamble, trailing commas and nested objects all handled in
+                # one place (backend/ai_response.py).
+                final_json = extract_json_payload(content)
 
                 # Try to parse the extracted JSON
                 result = json.loads(final_json)
@@ -814,55 +725,10 @@ Return JSON: {{"track_ids": [indices], "reasoning": "summary"}}"""
 
             # Parse the JSON response with comprehensive validation
             try:
-                # Clean up the response and extract JSON
-                cleaned_content = content.strip()
-
-                # Remove markdown code fences if present
-                if cleaned_content.startswith("```json"):
-                    cleaned_content = cleaned_content[7:]  # Remove ```json
-                if cleaned_content.startswith("```"):
-                    cleaned_content = cleaned_content[3:]   # Remove ```
-                if cleaned_content.endswith("```"):
-                    cleaned_content = cleaned_content[:-3]  # Remove trailing ```
-
-                cleaned_content = cleaned_content.strip()
-
-                # Extract JSON from mixed text/JSON response
-                import re
-
-                # Try to find JSON object first (new format): {"track_ids": [...], "reasoning": "..."}
-                json_object_match = re.search(r'\{.*?"track_ids".*?\}', cleaned_content, re.DOTALL)
-                if json_object_match:
-                    json_str = json_object_match.group(0)
-                    print(f"🔍 Extracted JSON object: {json_str[:100]}...")
-                else:
-                    # Try to find JSON array (legacy format): [1, 2, 3, ...]
-                    json_array_match = re.search(r'\[([\d\s,]+)\]', cleaned_content, re.DOTALL)
-                    if json_array_match:
-                        json_str = json_array_match.group(0)
-                        print(f"🔍 Extracted JSON array: {json_str[:100]}...")
-                    else:
-                        # No JSON found, try to parse the whole cleaned content
-                        json_str = cleaned_content
-                        print(f"🔍 Using entire cleaned content for JSON parsing")
-
-                # Clean up the extracted JSON
-                lines = json_str.split('\n')
-                cleaned_lines = []
-
-                for line in lines:
-                    # Remove // comments but preserve URLs like http://
-                    if '//' in line and 'http://' not in line and 'https://' not in line:
-                        comment_pos = line.find('//')
-                        line = line[:comment_pos].rstrip()
-
-                    # Remove trailing commas before closing brackets
-                    line = re.sub(r',(\s*[\]}])', r'\1', line)
-
-                    if line.strip():  # Only add non-empty lines
-                        cleaned_lines.append(line)
-
-                final_json = '\n'.join(cleaned_lines).strip()
+                # Salvage the JSON out of whatever the model returned — fences,
+                # preamble, trailing commas and nested objects all handled in
+                # one place (backend/ai_response.py).
+                final_json = extract_json_payload(content)
 
                 # Try to parse the extracted JSON
                 response_data = json.loads(final_json)
@@ -1115,21 +981,11 @@ Return JSON: {{"track_ids": [indices], "reasoning": "summary", "album_suggestion
 
             # Parse the JSON response
             try:
-                cleaned_content = content.strip()
-                if cleaned_content.startswith("```json"):
-                    cleaned_content = cleaned_content[7:]
-                if cleaned_content.startswith("```"):
-                    cleaned_content = cleaned_content[3:]
-                if cleaned_content.endswith("```"):
-                    cleaned_content = cleaned_content[:-3]
-                cleaned_content = cleaned_content.strip()
-
-                import re
-                # Radio responses contain nested objects, so grab the outermost JSON object
-                json_object_match = re.search(r'\{.*"track_ids".*\}', cleaned_content, re.DOTALL)
-                json_str = json_object_match.group(0) if json_object_match else cleaned_content
-
-                response_data = json.loads(json_str)
+                # Radio replies carry nested album suggestions; the shared
+                # extractor is brace-matched, so nesting survives. It also fixes
+                # the greedy variant this replaces, which ran to the LAST brace
+                # in the reply and swallowed any trailing prose.
+                response_data = json.loads(extract_json_payload(content))
 
                 if not isinstance(response_data, dict) or "track_ids" not in response_data:
                     raise ValueError("Invalid response format: expected dict with track_ids")

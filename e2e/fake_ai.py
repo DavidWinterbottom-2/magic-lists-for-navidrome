@@ -20,7 +20,7 @@ sends.
 import json
 import re
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 # Enough to fill the default 25-track request when the pool allows it.
 MAX_SELECTED = 25
@@ -45,25 +45,25 @@ def choose(payload):
 
 
 def reply_for(payload):
-    """The JSON body this particular recipe asked for.
+    """A curation reply, always including nested objects.
 
-    Only Radio asks for album suggestions, and only Radio's parser tolerates the
-    nested objects they need — "This Is" extracts its JSON with a non-greedy
-    `\\{.*?"track_ids".*?\\}`, which truncates at the first inner brace and fails
-    to parse. Answering in the shape the prompt requested is what a real model
-    does, and it keeps the fake from exercising a path no recipe produces.
+    Every reply carries `album_suggestions` even though only Radio asks for them,
+    and that is deliberate: models routinely return more than the prompt
+    requested, and the nested objects are what broke the "This Is" parser — it
+    extracted JSON with a non-greedy regex that truncated at the first inner
+    brace, failed to parse, and fell back to play-count ordering while reporting
+    "AI service was unavailable".
+
+    Sending nesting on every request means the e2e suite exercises that path on
+    every flow. If the extractor regresses, these tests fail rather than quietly
+    passing on fallback output.
     """
-    prompt = " ".join(
-        m.get("content", "") for m in payload.get("messages", []) if isinstance(m, dict)
-    )
-    reply = {
+    return json.dumps({
         "track_ids": choose(payload),
         "reasoning": "A steady run through the library's quieter corners, "
                      "opening with the familiar and drifting outward.",
-    }
-    if "album_suggestions" in prompt:
-        reply["album_suggestions"] = ALBUM_SUGGESTIONS
-    return json.dumps(reply)
+        "album_suggestions": ALBUM_SUGGESTIONS,
+    })
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -97,6 +97,9 @@ class Handler(BaseHTTPRequestHandler):
 
 def start(host="127.0.0.1", port=0):
     """Start the fake in a background thread. Returns (base_url, shutdown)."""
-    server = HTTPServer((host, port), Handler)
+    # Threading rather than the single-threaded HTTPServer: the app issues
+    # overlapping requests (an album lookup per album), and serialising them
+    # would make the fake a bottleneck the real Navidrome isn't.
+    server = ThreadingHTTPServer((host, port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return f"http://{host}:{server.server_address[1]}", server.shutdown

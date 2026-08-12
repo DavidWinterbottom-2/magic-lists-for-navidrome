@@ -29,13 +29,20 @@ def test_creating_a_playlist_reaches_navidrome_and_the_ui(page):
 
     select = open_this_is(page)
     select.select_option(label="Beta Signal")
-    page.locator("#create-artist-playlist-btn").click()
 
-    # The playlists list is the durable signal — the success toast dismisses
-    # itself after five seconds, so asserting on it races the build.
+    # Wait for the request itself to come back before doing anything else.
+    # Clicking create and then navigating straight to the playlists tab races
+    # the in-flight build, which fails intermittently and looks like a bug in
+    # the app rather than in the test.
+    with page.expect_response(
+        lambda r: "/api/create_playlist" in r.url, timeout=60_000
+    ) as response:
+        page.locator("#create-artist-playlist-btn").click()
+    assert response.value.status == 200, f"create returned {response.value.status}"
+
     page.locator('a[data-page="playlists"]').first.click()
     manage = page.locator("#manage-playlists-content")
-    expect(manage).to_contain_text("This Is: Beta Signal", timeout=60_000)
+    expect(manage).to_contain_text("This Is: Beta Signal", timeout=30_000)
 
     # It exists in "Navidrome", named for the artist, holding that artist's tracks.
     created = set(fake_navidrome.STATE.playlists) - before

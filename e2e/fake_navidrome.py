@@ -15,7 +15,7 @@ Playwright and a browser, and a fake this small doesn't justify a web framework.
 
 import json
 import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 # ── The library under test ───────────────────────────────────────────────────
@@ -235,7 +235,10 @@ class Handler(BaseHTTPRequestHandler):
 
 def start(host="127.0.0.1", port=0):
     """Start the fake in a background thread. Returns (base_url, shutdown)."""
-    server = HTTPServer((host, port), Handler)
+    # Threading rather than the single-threaded HTTPServer: the app issues
+    # overlapping requests (an album lookup per album), and serialising them
+    # would make the fake a bottleneck the real Navidrome isn't.
+    server = ThreadingHTTPServer((host, port), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     base_url = f"http://{host}:{server.server_address[1]}"
