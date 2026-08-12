@@ -1,6 +1,6 @@
 # REPO-STANDARDS
 
-**Version:** 1.14-seed · **Owner:** Hermes (self-hosted standards & skills agent)
+**Version:** 1.15-seed · **Owner:** Hermes (self-hosted standards & skills agent)
 
 > **Companion:** deployment-layer security — how a *hosted* service is exposed and how access
 > to it is controlled — lives in [`HOSTING-SECURITY.md`](HOSTING-SECURITY.md). This doc
@@ -77,7 +77,10 @@ reviewed by the model against the repo's actual contents.
   that guesses what ships is fragile, drifts from the Dockerfile, and can let a real change
   merge un-bumped — so keep the check simple and unconditional. Pure `:latest`-deployed
   services are versioned by their image SHA and are exempt; libraries and versioned apps are
-  not.
+  not. **Canonical name — the check's status-check context is `version-bumped`** (its job
+  `id`, or a job-level `name:`, resolves to that) in **every** repo, so a single
+  required-check name covers the whole fleet in branch protection. Hermes flags a §2 check
+  that exists but isn't named `version-bumped`.
 - **Multi-component repos** — a monorepo where each independently-deployed component
   (service, server, sidecar) carries its **own** version source — satisfy this **per
   component**: each component's check runs on the PRs that touch that component and fails an
@@ -133,7 +136,9 @@ reviewed by the model against the repo's actual contents.
   **coverage gate at ≥ 80%** (a `--cov-fail-under` / `coverageThreshold`-style check that
   fails the PR) — Hermes flags a repo whose CI runs tests without a coverage floor. For a
   web-UI repo, that test run must also include the browser-driven e2e suite — Hermes flags a
-  GUI app whose CI has no e2e run.
+  GUI app whose CI has no e2e run. **Canonical name — the primary test job is named `test`**
+  (a browser-driven suite may be a separate job named `e2e`); a uniform name keeps
+  required-check lists consistent across repos.
 
 ## §5 Refactoring & cleanup
 
@@ -285,6 +290,8 @@ they happen on cadence. The evidence is a **committed review log** the reviewer 
 - **Checkable:** the repo has a lint/format config (`[tool.ruff]`, `.eslintrc*` /
   `eslint.config.*`, `.prettierrc*`, …) **and** a CI job that runs the lint and format-check
   commands on every PR. Hermes flags a repo with source files but no CI lint/format gate.
+  **Canonical name — the lint/format job is named `lint`**, so the required-check name is the
+  same in every repo.
 
 ## §11 Usage analytics
 
@@ -312,6 +319,15 @@ they happen on cadence. The evidence is a **committed review log** the reviewer 
 ---
 
 ## Change log
+
+- **2026-08-11 — v1.15-seed.** Pinned the **canonical CI status-check names** so a single
+  required-check name covers the whole fleet in branch protection. The §2 version-bump
+  check's context is **`version-bumped`** (its job id or `name:`), now **enforced by Hermes**
+  — it flags a §2 check that exists but isn't named canonically; the §4 primary test job is
+  **`test`** (a browser suite may be a separate **`e2e`** job) and the §10 lint/format job is
+  **`lint`** (convention). Prompted by drift across repos (`version-bump`, `Version bumped`,
+  `pytest`); the fleet was normalized to `version-bumped` and the standard now defines the
+  contract the skills build and Hermes verifies.
 
 - **2026-08-04 — v1.14-seed.** Added **§11 Usage analytics**: every web UI should report
   anonymous usage to the shared self-hosted **Umami** through a fixed, **off-by-default** env
