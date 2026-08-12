@@ -41,14 +41,19 @@ jobs:
           python-version: "3.11"
       - run: pip install -r requirements.txt -r requirements-dev.txt
 
+      # Invoked as `python -m` throughout, not the bare `pytest` / `coverage`
+      # console scripts: `python -m` guarantees the interpreter pip just
+      # installed into (a PATH shadowed by another pytest silently loses the
+      # -cov plugin) and puts the repo root on sys.path.
+
       # Fails under 80% on the core modules (fail_under lives in pyproject.toml).
       - name: Tests + core coverage gate
-        run: pytest -q --cov=backend --cov-report=term-missing
+        run: python -m pytest -q --cov=backend --cov-report=term-missing
 
       # Informational only — never fails the build. This is the number that has
       # to come up over time as the I/O layers gain integration tests.
       - name: Whole-backend coverage (not gated)
-        run: coverage report --include='backend/*' --fail-under=0
+        run: python -m coverage report --include='backend/*' --fail-under=0
 
       # The suite must keep running under the stdlib runner too: pytest is the
       # gate, but nothing in tests/ may depend on pytest-only features.

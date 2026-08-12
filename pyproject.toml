@@ -20,6 +20,11 @@ replace = 'version = "{new_version}"'
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Make `backend` importable from the repo root. `python -m unittest` and
+# `python -m pytest` both put the working directory on sys.path implicitly, but
+# a bare `pytest` does not — which is how CI invokes it, so without this the
+# whole suite fails to collect there while passing locally.
+pythonpath = ["."]
 # The suite is stdlib unittest.TestCase classes, which pytest collects natively.
 # Keep it that way: the tests must pass under `python -m unittest discover` too,
 # so nothing here may become load-bearing.
