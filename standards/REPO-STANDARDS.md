@@ -1,6 +1,6 @@
 # REPO-STANDARDS
 
-**Version:** 1.15-seed · **Owner:** Hermes (self-hosted standards & skills agent)
+**Version:** 1.16-seed · **Owner:** Hermes (self-hosted standards & skills agent)
 
 > **Companion:** deployment-layer security — how a *hosted* service is exposed and how access
 > to it is controlled — lives in [`HOSTING-SECURITY.md`](HOSTING-SECURITY.md). This doc
@@ -245,10 +245,10 @@ Reviews are **run by a capable agent** (Claude Code, via the `code-review` and
 they happen on cadence. The evidence is a **committed review log** the reviewer updates.
 
 - **Code review** — run the `code-review` skill on **every non-trivial PR**, and at least
-  **weekly** on the repo's active work.
+  **monthly** on the repo's active work.
 - **Architecture review** — run an architecture review (`improve-codebase-architecture`)
   **after any significant change** (a new module/service, a data-model change, a refactor
-  touching many files) and at least **monthly** on an actively-developed repo.
+  touching many files) and at least **quarterly** on an actively-developed repo.
 - **Record every review** in [`docs/reviews/LOG.md`](../docs/reviews/LOG.md), newest first,
   one line per review (use the `record-review` skill so the format stays machine-readable):
 
@@ -265,7 +265,7 @@ they happen on cadence. The evidence is a **committed review log** the reviewer 
 
 - **Checkable:** Hermes reads `docs/reviews/LOG.md`, takes the newest date per type, and
   flags a **missing log**, a **review never recorded**, or one that's **overdue** against the
-  cadence windows (7 days for code review, 30 for architecture) — via the `has_review_log` /
+  cadence windows (30 days for code review, 90 for architecture) — via the `has_review_log` /
   `last_code_review` / `last_architecture_review` signals. Hermes never runs the review
   itself; a `.hermes-ignore` line `§9 Review cadence` opts out repos with no application code.
 
@@ -319,6 +319,14 @@ they happen on cadence. The evidence is a **committed review log** the reviewer 
 ---
 
 ## Change log
+
+- **2026-08-14 — v1.16-seed.** §9: **relaxed the review-cadence windows** to fit a small,
+  low-churn fleet. Code review moves from **weekly → monthly** (Hermes flags a recorded code
+  review older than **30 days**, was 7) and architecture review from **monthly → quarterly**
+  (older than **90 days**, was 30). The 7-day window fired "Code review overdue" across most
+  repos every week; monthly/quarterly keeps the cadence meaningful without the constant nag,
+  and preserves the ordering (code review stays the more frequent of the two). Enforced by
+  Hermes's `CODE_REVIEW_MAX_AGE_DAYS` / `ARCH_REVIEW_MAX_AGE_DAYS`.
 
 - **2026-08-11 — v1.15-seed.** Pinned the **canonical CI status-check names** so a single
   required-check name covers the whole fleet in branch protection. The §2 version-bump
