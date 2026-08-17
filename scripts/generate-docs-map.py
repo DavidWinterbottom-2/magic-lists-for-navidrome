@@ -60,7 +60,7 @@ EXEMPT_FILES = {
 # Directories covered by a single entry, or owned elsewhere entirely. Hidden
 # directories are skipped wholesale (see scan below), which covers .claude/,
 # .github/ and the various tool caches that ship their own README.
-EXEMPT_DIRS = ("standards/", "node_modules/", "venv/", "htmlcov/", "test-results/")
+EXEMPT_DIRS = ("standards/", "docs/reviews/", "node_modules/", "venv/", "htmlcov/", "test-results/")
 
 TABLE_ROW = re.compile(r"^\|(?P<purpose>[^|]+)\|(?P<target>[^|]+)\|\s*$")
 LINK = re.compile(r"\]\((?P<path>[^)#]+)(?:#[^)]*)?\)")
