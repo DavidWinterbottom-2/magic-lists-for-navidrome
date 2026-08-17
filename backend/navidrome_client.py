@@ -91,7 +91,17 @@ class NavidromeClient:
                 "c": "MagicLists",
                 "f": "json"
             }
-    
+
+    @staticmethod
+    def _redact_auth(params: Dict[str, Any]) -> Dict[str, Any]:
+        """Strip Subsonic credentials before logging.
+
+        `t` (token / API key) and `s` (salt) authenticate every request; they must
+        never reach stdout/logs. Route ALL params logging through this so a new log
+        line can't reintroduce the leak.
+        """
+        return {k: v for k, v in params.items() if k not in ("t", "s")}
+
     async def get_artists(self, library_ids: Union[List[str], str, None] = None) -> List[Dict[str, Any]]:
         """Fetch all artists from Navidrome using Subsonic API
 
@@ -161,8 +171,7 @@ class NavidromeClient:
                 print(f"🎵 Using library ID: {library_id}")
 
             # Log the full request for debugging (minus auth details)
-            log_params = {k: v for k, v in params.items() if k not in ['t', 's']}
-            print(f"🌐 getArtists request: GET {self.base_url}/rest/getArtists.view with params: {log_params}")
+            print(f"🌐 getArtists request: GET {self.base_url}/rest/getArtists.view with params: {self._redact_auth(params)}")
 
             response = await self.client.get(
                 f"{self.base_url}/rest/getArtists.view",
@@ -191,7 +200,7 @@ class NavidromeClient:
                     # Remove any library-specific parameters
                     retry_params.pop("musicFolderId", None)
 
-                    print(f"🔄 Retry getArtists request: GET {self.base_url}/rest/getArtists.view with params: {retry_params}")
+                    print(f"🔄 Retry getArtists request: GET {self.base_url}/rest/getArtists.view with params: {self._redact_auth(retry_params)}")
 
                     retry_response = await self.client.get(
                         f"{self.base_url}/rest/getArtists.view",
@@ -1288,7 +1297,7 @@ class NavidromeClient:
             
             print(f"🗑️ Attempting to delete playlist with ID: {playlist_id}")
             print(f"🔧 Delete request URL: {self.base_url}/rest/deletePlaylist.view")
-            print(f"🔧 Delete request params: {params}")
+            print(f"🔧 Delete request params: {self._redact_auth(params)}")
             
             response = await self.client.get(
                 f"{self.base_url}/rest/deletePlaylist.view",
