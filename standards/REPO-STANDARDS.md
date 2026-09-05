@@ -1,6 +1,6 @@
 # REPO-STANDARDS
 
-**Version:** 1.16-seed · **Owner:** Hermes (self-hosted standards & skills agent)
+**Version:** 1.17-seed · **Owner:** Hermes (self-hosted standards & skills agent)
 
 > **Companion:** deployment-layer security — how a *hosted* service is exposed and how access
 > to it is controlled — lives in [`HOSTING-SECURITY.md`](HOSTING-SECURITY.md). This doc
@@ -30,6 +30,11 @@ reviewed by the model against the repo's actual contents.
 - A PR requires **at least 1 approval** and **all status checks green** before merge.
 - Branches must be **up to date with `main`** before merging; history is preserved
   (no force-push to `main`).
+- **A merged branch is deleted.** Enable the repo's "Automatically delete head
+  branches" setting so this happens without a manual step; a merged PR's branch is
+  cleanup debt if it lingers, and a branch reused across many PRs over time (e.g.
+  `template-sync/skills`) is recreated fresh by whatever automation opens the next
+  PR against it — deleting it between merges loses nothing.
 - Work happens on feature branches, named for **who** created them and **why**:
   - **Claude following a skill** — `claude/<skill-name>/<description>`
     (e.g. `claude/design-system-sync/token-refresh`), so the branch records which
@@ -43,7 +48,8 @@ reviewed by the model against the repo's actual contents.
   - **Human work** — `<type>/<description>` (`feat`, `chore`, `docs`, …).
 - **Checkable:** the default branch is `main`, is **protected** (a ruleset or classic branch
   protection), and **requires a pull request** to merge — Hermes verifies this via the GitHub
-  API. CI is configured (`.github/workflows/`) so there is a status check to require.
+  API, which also reports the repo's `delete_branch_on_merge` setting. CI is configured
+  (`.github/workflows/`) so there is a status check to require.
 - **Enforcement caveat:** GitHub only *enforces* branch protection / rulesets on **private**
   repos under a **paid plan** (Pro/Team/Enterprise) or when the repo is **public**. On a
   private Free-plan repo the rule can be configured but is not enforced. Where that's the
@@ -319,6 +325,13 @@ they happen on cadence. The evidence is a **committed review log** the reviewer 
 ---
 
 ## Change log
+
+- **2026-08-19 — v1.17-seed.** §1: added **"a merged branch is deleted"** — enable the repo's
+  "Automatically delete head branches" setting rather than leaving merged branches to pile up.
+  Prompted by a fleet-wide cleanup that found 300+ stale branches (mostly `claude/*` session
+  branches and reused automation branches like `template-sync/skills`) sitting merged-but-not-
+  deleted across the org's repos. Hermes's branch-protection check now also surfaces the
+  repo's `delete_branch_on_merge` setting.
 
 - **2026-08-14 — v1.16-seed.** §9: **relaxed the review-cadence windows** to fit a small,
   low-churn fleet. Code review moves from **weekly → monthly** (Hermes flags a recorded code
