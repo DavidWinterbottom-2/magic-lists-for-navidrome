@@ -73,7 +73,7 @@ class RediscoverWeekly:
                                     continue
                             
                             return filtered_scrobbles
-            except:
+            except Exception:
                 # Scrobbles endpoint not available, continue with fallback
                 pass
             
@@ -157,7 +157,7 @@ class RediscoverWeekly:
                     
                     if play_time >= week_ago:
                         track_stats[song_id]["recent_plays"] += 1
-                except:
+                except Exception:
                     continue
         
         return dict(track_stats)
@@ -370,7 +370,7 @@ class RediscoverWeekly:
                         track_match = next((t for t in self.all_tracks_cache if t["id"] == song_id), None)
                         if track_match:
                             genre = track_match.get("genre", "Unknown")
-                except:
+                except Exception:
                     genre = "Unknown"
                 
                 ai_candidates.append({
@@ -569,7 +569,7 @@ class ReDiscoverV2Processor:
             # Cache for 24 hours
             await self.db.set_cache(cache_key, str(count), 86400)
             return count
-        except:
+        except Exception:
             return 1000  # Fallback estimate
 
     async def _get_genres_cached(self, server_id: str) -> List[str]:
@@ -587,7 +587,7 @@ class ReDiscoverV2Processor:
             # Cache for 24 hours
             await self.db.set_cache(cache_key, json.dumps(genre_names), 86400)
             return genre_names
-        except:
+        except Exception:
             return ["Rock", "Pop", "Electronic", "Jazz", "Classical"]  # Fallback
 
     def _calculate_sample_size(self, library_size: int) -> int:
@@ -896,7 +896,7 @@ class ReDiscoverV2Processor:
                     played = datetime.fromisoformat(played_str)
                     if played > exclude_before:
                         continue  # Played too recently
-                except:
+                except Exception:
                     pass  # Continue if timestamp parsing fails
 
             # Calculate rediscovery score
@@ -909,7 +909,7 @@ class ReDiscoverV2Processor:
                         played_str = played_str[:-1] + "+00:00"
                     played = datetime.fromisoformat(played_str)
                     days_since_play = (now - played).days
-                except:
+                except Exception:
                     pass
 
             # Enhanced scoring: play_count * log(days_since_play + 1) * random_factor
@@ -1137,7 +1137,7 @@ class ReDiscoverV2Processor:
                             played = datetime.fromisoformat(played_str)
                             if played < exclude_before:
                                 valid_starred.append(track)
-                        except:
+                        except Exception:
                             continue
 
                 if len(valid_starred) >= 10:

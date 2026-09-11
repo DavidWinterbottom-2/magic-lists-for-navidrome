@@ -32,35 +32,35 @@ class DatabaseManager:
             # Add reasoning column if it doesn't exist (for existing databases)
             try:
                 await db.execute("ALTER TABLE playlists ADD COLUMN reasoning TEXT")
-            except:
+            except Exception:
                 # Column already exists or other error - ignore
                 pass
             
             # Add navidrome_playlist_id column if it doesn't exist (for existing databases)
             try:
                 await db.execute("ALTER TABLE playlists ADD COLUMN navidrome_playlist_id TEXT")
-            except:
+            except Exception:
                 # Column already exists or other error - ignore
                 pass
 
             # Add library_ids column if it doesn't exist (for existing databases)
             try:
                 await db.execute("ALTER TABLE playlists ADD COLUMN library_ids TEXT")  # JSON array of library IDs
-            except:
+            except Exception:
                 # Column already exists or other error - ignore
                 pass
             
             # Add last_refreshed column if it doesn't exist (for tracking refreshes)
             try:
                 await db.execute("ALTER TABLE playlists ADD COLUMN last_refreshed TIMESTAMP")
-            except:
+            except Exception:
                 # Column already exists or other error - ignore
                 pass
             
             # Add playlist_length column if it doesn't exist (for storing original length)
             try:
                 await db.execute("ALTER TABLE playlists ADD COLUMN playlist_length INTEGER")
-            except:
+            except Exception:
                 # Column already exists or other error - ignore
                 pass
 
@@ -69,7 +69,7 @@ class DatabaseManager:
             # scheduled rebuild are still there when you next open the playlist.
             try:
                 await db.execute("ALTER TABLE playlists ADD COLUMN album_suggestions TEXT")
-            except:
+            except Exception:
                 # Column already exists or other error - ignore
                 pass
 
@@ -78,7 +78,7 @@ class DatabaseManager:
             # scheduled rebuild has nobody watching, so the outcome has to persist.
             try:
                 await db.execute("ALTER TABLE playlists ADD COLUMN build_info TEXT")
-            except:
+            except Exception:
                 # Column already exists or other error - ignore
                 pass
 
@@ -607,7 +607,7 @@ class DatabaseManager:
             last_tracked_date = datetime.fromisoformat(last_tracked)
             cutoff_date = datetime.now() - timedelta(days=90)
             return last_tracked_date < cutoff_date
-        except:
+        except Exception:
             return True  # Invalid timestamp, track again
     
     async def record_library_size(self, song_count: int) -> bool:
