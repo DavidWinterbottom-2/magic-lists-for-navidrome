@@ -1,6 +1,13 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
+
+# The UI only ever offers 25/50/100 (see frontend/templates/index.html's
+# playlist-length radio groups); this is a generous server-side ceiling well
+# above that so a direct API call still has headroom, without leaving
+# playlist_length fully unbounded for a malformed/malicious request (each
+# track costs a Navidrome + AI-provider round trip during curation).
+MAX_PLAYLIST_LENGTH = 1000
 
 class Artist(BaseModel):
     """Schema for Navidrome artist"""
@@ -14,7 +21,7 @@ class CreatePlaylistRequest(BaseModel):
     artist_ids: List[str]
     playlist_name: Optional[str] = None  # Optional, will auto-generate if not provided
     refresh_frequency: str = "none"  # "none", "daily", "weekly", "monthly"
-    playlist_length: int = 25  # Number of tracks to include
+    playlist_length: int = Field(25, gt=0, le=MAX_PLAYLIST_LENGTH)  # Number of tracks to include
     library_ids: List[str] = []  # List of library IDs to filter tracks
 
 class CreateGenrePlaylistRequest(BaseModel):
@@ -22,7 +29,7 @@ class CreateGenrePlaylistRequest(BaseModel):
     genre: str
     playlist_name: Optional[str] = None  # Optional, will auto-generate if not provided
     refresh_frequency: str = "none"  # "none", "daily", "weekly", "monthly"
-    playlist_length: int = 25  # Number of tracks to include
+    playlist_length: int = Field(25, gt=0, le=MAX_PLAYLIST_LENGTH)  # Number of tracks to include
     library_ids: List[str] = []  # List of library IDs to filter tracks
 
 class CreateRadioPlaylistRequest(BaseModel):
@@ -31,7 +38,7 @@ class CreateRadioPlaylistRequest(BaseModel):
     seed_id: str  # Navidrome artist ID or song ID depending on seed_type
     playlist_name: Optional[str] = None  # Optional, auto-generated if not provided
     refresh_frequency: str = "none"  # "none", "daily", "weekly", "monthly"
-    playlist_length: int = 25  # Number of tracks to include
+    playlist_length: int = Field(25, gt=0, le=MAX_PLAYLIST_LENGTH)  # Number of tracks to include
     library_ids: List[str] = []  # List of library IDs to filter tracks
 
 class RecreatePlaylistRequest(BaseModel):
@@ -42,7 +49,7 @@ class RecreatePlaylistRequest(BaseModel):
     mind — particularly to raise the length again after a short build, which
     otherwise needs deleting and recreating the playlist from scratch.
     """
-    playlist_length: Optional[int] = None       # None = keep the stored length
+    playlist_length: Optional[int] = Field(None, gt=0, le=MAX_PLAYLIST_LENGTH)  # None = keep the stored length
     refresh_frequency: Optional[str] = None     # None = keep the current schedule
 
 
@@ -126,7 +133,7 @@ class RediscoverWeeklyV2Response(BaseModel):
 class CreateRediscoverPlaylistRequest(BaseModel):
     """Request schema for creating a Re-Discover Weekly playlist"""
     refresh_frequency: str = "weekly"  # "daily", "weekly", "monthly"
-    playlist_length: int = 25  # Number of tracks to include
+    playlist_length: int = Field(25, gt=0, le=MAX_PLAYLIST_LENGTH)  # Number of tracks to include
     library_ids: List[str] = []  # List of library IDs to filter tracks
 
 class ScheduledPlaylist(BaseModel):

@@ -152,6 +152,15 @@ class ThisIsCreationTests(ApiTestCase):
         response = self.create_this_is("does-not-exist")
         self.assertGreaterEqual(response.status_code, 400)
 
+    def test_playlist_length_is_bounded(self):
+        # Each track costs a Navidrome + AI-provider round trip during
+        # curation, so an unbounded playlist_length is a resource-abuse
+        # vector, not just a UI concern (the UI only ever offers 25/50/100).
+        self.assertEqual(self.create_this_is("ar-1", length=0).status_code, 422)
+        self.assertEqual(self.create_this_is("ar-1", length=-5).status_code, 422)
+        self.assertEqual(self.create_this_is("ar-1", length=1001).status_code, 422)
+        self.assertEqual(self.create_this_is("ar-1", length=1000).status_code, 200)
+
 
 class RadioCreationTests(ApiTestCase):
     def test_a_station_opens_with_its_seed_and_caps_that_artist(self):

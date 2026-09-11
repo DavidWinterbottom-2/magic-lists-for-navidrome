@@ -110,16 +110,7 @@ class AIClient:
                 
                 print(f"🤖 Using AI model: {model} (from {self.provider.provider_type} provider)")
 
-                # Serialize the complete recipe (excluding tracks_data to avoid duplication)
-                recipe_without_tracks = {k: v for k, v in final_recipe.items() if k != "tracks_data"}
-
-                headers = {
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json"
-                }
-                
-                # Build structured JSON payload with INDEX-BASED approach
-                # Create indexed tracks (remove complex IDs, use simple indices)
+                # Build indexed tracks (remove complex IDs, use simple indices)
                 indexed_tracks = []
                 track_id_map = []  # Keep mapping of index → actual track ID
                 
@@ -138,16 +129,6 @@ class AIClient:
                     }
                     indexed_tracks.append(indexed_track)
                 
-                structured_payload = {
-                    "recipe": recipe_without_tracks,
-                    "available_tracks": indexed_tracks,  # INDEX-BASED tracks (no complex IDs)
-                    "request": {
-                        "artist_name": artist_name,
-                        "desired_track_count": num_tracks,
-                        "playlist_type": "this_is"
-                     }
-                }
-
                 print(f"🔢 Using index-based approach for {len(track_id_map)} tracks")
 
                 # Minimal payload for "This Is" - only essential data
@@ -156,22 +137,6 @@ class AIClient:
 Tracks: {json.dumps(indexed_tracks, separators=(',', ':'), ensure_ascii=False)}
 
 Return JSON: {{"track_ids": [indices], "reasoning": "summary"}}"""
-                
-                payload = {
-                    "model": model,
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": model_instructions
-                        },
-                        {
-                            "role": "user", 
-                            "content": user_content
-                        }
-                    ],
-                    "max_tokens": max_tokens,
-                    "temperature": temperature
-                }
                 
                 print(f"💬 Sending structured payload to AI")
                 
@@ -422,20 +387,6 @@ Return JSON: {{"track_ids": [indices], "reasoning": "summary"}}"""
 
                 print(f"🤖 Using AI model: {model} (from {self.provider.provider_type} provider)")
 
-                # Serialize the complete recipe (excluding tracks for structured payload)
-                recipe_without_tracks = {k: v for k, v in final_recipe.items() if k not in ["candidate_tracks", "tracks_data"]}
-
-                structured_payload = {
-                    "recipe": recipe_without_tracks,
-                    "available_tracks": indexed_tracks,  # INDEX-BASED tracks (no complex IDs)
-                    "analysis_summary": analysis_summary,
-                    "request": {
-                        "desired_track_count": num_tracks,
-                        "playlist_type": "rediscover",
-                        "variety_context": variety_context or ""
-                    }
-                }
-
                 # Minimal payload for re-discover - only essential data
                 user_content = f"""Select {num_tracks} tracks for a Re-Discover Weekly playlist.
 
@@ -672,11 +623,7 @@ Return JSON: {{"track_ids": [indices], "reasoning": "summary"}}"""
 
             print(f"🤖 Using AI model: {model} (from {self.provider.provider_type} provider)")
 
-            # Serialize the complete recipe (excluding tracks_data to avoid duplication)
-            recipe_without_tracks = {k: v for k, v in final_recipe.items() if k != "tracks_data"}
-
-            # Build structured JSON payload with INDEX-BASED approach
-            # Create indexed tracks (remove complex IDs, use simple indices)
+            # Build indexed tracks (remove complex IDs, use simple indices)
             indexed_tracks = []
 
             for index, track in enumerate(shuffled_tracks):
@@ -692,16 +639,6 @@ Return JSON: {{"track_ids": [indices], "reasoning": "summary"}}"""
                     "local_library_likes": track.get("local_library_likes", False)
                 }
                 indexed_tracks.append(indexed_track)
-
-            structured_payload = {
-                "recipe": recipe_without_tracks,
-                "available_tracks": indexed_tracks,  # INDEX-BASED tracks (no complex IDs)
-                "request": {
-                    "genre_name": genre,
-                    "desired_track_count": num_tracks,
-                    "playlist_type": "genre_mix"
-                }
-            }
 
             print(f"🔢 Using index-based approach for {len(track_id_map)} tracks")
 

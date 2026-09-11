@@ -1,4 +1,7 @@
+import ast
 import json
+import math
+import operator
 import os
 import re
 from typing import Dict, Any, Optional, List
@@ -28,6 +31,55 @@ PLACEHOLDER = re.compile(r"\{\{(?!MATH:)([A-Z_]+)\}\}")
 def is_current_format(recipe: Dict[str, Any]) -> bool:
     """Current-format recipes drive the model through `model_instructions`."""
     return "model_instructions" in recipe or "llm_config" in recipe
+
+
+# Whitelisted `{{MATH:...}}` functions — same set `eval()`'s `allowed_names`
+# used to expose, kept here so `_safe_eval_math` supports exactly what
+# bundled recipes (recipes/*.json) actually use (max/ceil/floor today) plus
+# the rest of the original allowance, without running arbitrary code.
+_SAFE_MATH_FUNCS = {
+    "abs": abs, "round": round, "min": min, "max": max,
+    "ceil": math.ceil, "floor": math.floor,
+    "pow": pow, "sqrt": math.sqrt,
+}
+
+_SAFE_MATH_BINOPS = {
+    ast.Add: operator.add, ast.Sub: operator.sub,
+    ast.Mult: operator.mul, ast.Div: operator.truediv,
+    ast.FloorDiv: operator.floordiv, ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+}
+
+_SAFE_MATH_UNARYOPS = {ast.UAdd: operator.pos, ast.USub: operator.neg}
+
+
+def _safe_eval_math(expression: str) -> float | int:
+    """Evaluate a `{{MATH:...}}` expression (arithmetic + the whitelisted
+    functions above) without `eval()`. Parses to an AST and walks only the
+    node types a math expression needs — anything else (attribute access,
+    subscripts, comprehensions, calls to a non-whitelisted name, ...) raises
+    instead of running.
+    """
+
+    def _evaluate(node):
+        if isinstance(node, ast.Expression):
+            return _evaluate(node.body)
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return node.value
+        if isinstance(node, ast.BinOp) and type(node.op) in _SAFE_MATH_BINOPS:
+            return _SAFE_MATH_BINOPS[type(node.op)](_evaluate(node.left), _evaluate(node.right))
+        if isinstance(node, ast.UnaryOp) and type(node.op) in _SAFE_MATH_UNARYOPS:
+            return _SAFE_MATH_UNARYOPS[type(node.op)](_evaluate(node.operand))
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id in _SAFE_MATH_FUNCS
+            and not node.keywords
+        ):
+            return _SAFE_MATH_FUNCS[node.func.id](*(_evaluate(arg) for arg in node.args))
+        raise ValueError(f"disallowed expression node: {type(node).__name__}")
+
+    return _evaluate(ast.parse(expression, mode="eval"))
 
 
 class RecipeManager:
@@ -78,42 +130,30 @@ class RecipeManager:
     
     def _evaluate_math_expressions(self, obj: Any, inputs: Dict[str, Any]) -> Any:
         """First pass: Evaluate {{MATH:...}} expressions before regular replacements."""
-        import re
-        import math
-        
         if isinstance(obj, str):
             # Find all {{MATH:...}} patterns
             math_pattern = r'\{\{MATH:([^}]+)\}\}'
-            
+
             def evaluate_math(match):
                 expression = match.group(1)
-                
+
                 # Replace DESIRED_TRACK_COUNT with actual value inside math expression
                 if "DESIRED_TRACK_COUNT" in expression:
                     expression = expression.replace("DESIRED_TRACK_COUNT", str(inputs.get("num_tracks", 25)))
-                
+
                 try:
-                    # Evaluate the math expression safely
-                    # Allow basic math operations and functions
-                    allowed_names = {
-                        "__builtins__": {},
-                        "abs": abs, "round": round, "min": min, "max": max,
-                        "ceil": math.ceil, "floor": math.floor,
-                        "pow": pow, "sqrt": math.sqrt
-                    }
-                    
-                    result = eval(expression, allowed_names, {})
-                    
+                    result = _safe_eval_math(expression)
+
                     # Convert to integer if it's a whole number
                     if isinstance(result, float) and result.is_integer():
                         result = int(result)
-                    
+
                     return str(result)
-                    
+
                 except Exception as e:
                     print(f"❌ Math evaluation failed for '{expression}': {e}")
                     return match.group(0)  # Return original if evaluation fails
-            
+
             # Replace all math expressions
             return re.sub(math_pattern, evaluate_math, obj)
             
