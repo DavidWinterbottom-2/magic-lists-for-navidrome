@@ -87,6 +87,25 @@ class MathEvaluationTests(unittest.TestCase):
         # A malformed recipe should degrade to a slightly odd prompt, not a 500.
         self.assertEqual(self._eval("{{MATH:this is not maths}}"), "{{MATH:this is not maths}}")
 
+    def test_a_disallowed_expression_is_rejected_not_executed(self):
+        # recipes/*.json ship with the app, but a MATH expression is still
+        # attacker-reachable in principle (a hand-edited or future recipe) —
+        # this proves the AST evaluator refuses anything outside arithmetic
+        # and the whitelisted functions, the same way the old bare eval()
+        # would instead have executed it.
+        dangerous = [
+            "{{MATH:().__class__}}",
+            "{{MATH:__import__('os').system('echo pwned')}}",
+            "{{MATH:open('/etc/passwd').read()}}",
+            "{{MATH:[x for x in range(3)]}}",
+        ]
+        for expression in dangerous:
+            with self.subTest(expression=expression):
+                # Falls back to the untouched literal, exactly like any other
+                # malformed expression — never raises out of _evaluate_math_expressions
+                # and never executes the payload.
+                self.assertEqual(self._eval(expression), expression)
+
     def test_expressions_are_evaluated_inside_nested_structures(self):
         recipe = {"steps": [{"target": "{{MATH:DESIRED_TRACK_COUNT*0.4}}"}], "n": 5, "on": True}
         result = self.manager._evaluate_math_expressions(recipe, {"num_tracks": 10})
