@@ -1,0 +1,17 @@
+# Deliberate deviations Hermes should not flag for this repo.
+# One rule per line; matches a finding's title, standards ref, or category.
+# A §N rule suppresses every finding in that section; skill:<name> drops a
+# proposal / "apply the '<name>' skill" nudge for that skill.
+
+# Branch naming — already fully specified in devcontainer-sandbox's
+# REPO-STANDARDS.md §1 and documented in this repo's own CLAUDE.md. Hermes has
+# proposed a dedicated "branch naming convention" skill three times under three
+# different names since 2026-08-18 (branch-naming-convention, enforce-branch-naming,
+# configure-feature-branch-naming — devcontainer-sandbox PRs #95/#105/#108, all
+# dismissed) — the same idea recurring, not a real gap. Do not propose or
+# recommend any new skill, under any name, that documents or enforces branch
+# naming conventions.
+skill:branch-naming-convention
+skill:enforce-branch-naming
+skill:configure-feature-branch-naming
+Do not propose a skill for branch naming conventions — already fully specified in REPO-STANDARDS.md §1 and this repo's own CLAUDE.md.
