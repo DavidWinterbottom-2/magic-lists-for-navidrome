@@ -1267,16 +1267,51 @@ function renderAlbumSuggestionsHtml(suggestions) {
             ? `<a href="${escapeHtml(s.lidarr_url)}" target="_blank" rel="noopener noreferrer"
                   class="text-sm font-semibold text-gray-900 underline hover:text-gray-600">${title}</a>`
             : `<span class="text-sm font-semibold text-gray-900">${title}</span>`;
+        // With a Lidarr API key + quality profile + root folder configured, add
+        // the artist directly rather than sending the listener to Lidarr's own
+        // search page; otherwise fall back to the deep link as before.
+        const lidarrAction = s.lidarr_addable
+            ? `<button type="button" data-artist="${escapeHtml(s.artist)}" onclick="addSuggestionToLidarr(this)"
+                  class="inline-block text-sm font-medium text-gray-900 underline mt-2 bg-transparent border-0 p-0 cursor-pointer">Add to Lidarr</button>`
+            : (s.lidarr_url ? `<a href="${escapeHtml(s.lidarr_url)}" target="_blank" rel="noopener noreferrer"
+                    class="inline-block text-sm font-medium text-gray-900 underline mt-2">Add in Lidarr</a>` : '');
         return `
             <div class="p-3 border border-gray-200 rounded-lg">
                 <p class="mb-0">${heading}</p>
                 <p class="text-sm text-gray-600 mb-0">${escapeHtml(s.artist)}</p>
                 ${s.reason ? `<p class="text-sm text-gray-500 italic mt-1 mb-0">${escapeHtml(s.reason)}</p>` : ''}
-                ${s.lidarr_url ? `<a href="${escapeHtml(s.lidarr_url)}" target="_blank" rel="noopener noreferrer"
-                    class="inline-block text-sm font-medium text-gray-900 underline mt-2">Add in Lidarr</a>` : ''}
+                ${lidarrAction}
             </div>
         `;
     }).join('');
+}
+
+// Adds one suggestion's artist to Lidarr via the API (see /api/radio/add_to_lidarr)
+// rather than sending the listener to Lidarr's own search page.
+async function addSuggestionToLidarr(button) {
+    const artist = button.dataset.artist;
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Adding…';
+
+    try {
+        const response = await fetch('/api/radio/add_to_lidarr', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ artist })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.detail || 'Failed to add to Lidarr');
+        }
+
+        button.textContent = 'Added ✓';
+        showToast('success', `Added "${data.artist_name || artist}" to Lidarr`);
+    } catch (error) {
+        button.disabled = false;
+        button.textContent = originalText;
+        showToast('error', error.message || 'Failed to add to Lidarr');
+    }
 }
 
 // Re-discover Weekly functionality

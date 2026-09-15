@@ -165,6 +165,20 @@ Radio's "albums you don't own yet" suggestions become one-click deep links into
 Lidarr's *Add New* search, prefilled with the artist and album. Unset, they
 render as plain text.
 
+Add the following to let Radio add the artist to Lidarr directly instead —
+one click, no trip through Lidarr's own search page:
+
+```bash
+LIDARR_API_KEY=...                     # Settings -> General -> Security
+LIDARR_QUALITY_PROFILE_ID=1            # Settings -> Profiles -> Quality Profiles
+LIDARR_ROOT_FOLDER_PATH=/music         # Settings -> Media Management -> Root Folders
+```
+
+All three are required together — with any one missing, suggestions fall back
+to the deep link above. Adding an artist this way sets it monitored and
+triggers an immediate search for its missing albums, the same as adding it by
+hand in Lidarr's UI would.
+
 ### Multiple Navidrome libraries
 
 MagicLists detects and works across all libraries by default. To target one:

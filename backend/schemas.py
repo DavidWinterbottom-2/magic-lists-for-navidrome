@@ -41,6 +41,10 @@ class CreateRadioPlaylistRequest(BaseModel):
     playlist_length: int = Field(25, gt=0, le=MAX_PLAYLIST_LENGTH)  # Number of tracks to include
     library_ids: List[str] = []  # List of library IDs to filter tracks
 
+class AddToLidarrRequest(BaseModel):
+    """Request schema for adding one Radio album suggestion's artist to Lidarr"""
+    artist: str
+
 class RecreatePlaylistRequest(BaseModel):
     """Options for a manual rebuild.
 
