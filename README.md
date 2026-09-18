@@ -122,7 +122,10 @@ the next station better.
   falls back to its own knowledge.
 - **One click to Lidarr.** Set `LIDARR_URL` and each suggestion becomes a deep
   link into Lidarr's *Add New* search, prefilled with the artist and album.
-  Unset, they render as plain text.
+  Unset, they render as plain text. Add `LIDARR_API_KEY`,
+  `LIDARR_QUALITY_PROFILE_ID` and `LIDARR_ROOT_FOLDER_PATH` on top of that and
+  the link becomes an **Add to Lidarr** button that adds the artist directly
+  via Lidarr's API — no trip through Lidarr's own search page.
 
 ### Keeping a station fresh
 
@@ -446,6 +449,7 @@ Full annotated list in [`.env.example`](.env.example).
 | --- | --- |
 | `LASTFM_API_KEY` / `LASTFM_USERNAME` | Loved-track scoring and grounded Radio suggestions. Needs Settings → Privacy → "Hide recent listening information" **off** |
 | `LIDARR_URL` | Turns Radio album suggestions into Lidarr *Add New* links |
+| `LIDARR_API_KEY` / `LIDARR_QUALITY_PROFILE_ID` / `LIDARR_ROOT_FOLDER_PATH` | All three together turn that link into a direct "Add to Lidarr" API call |
 | `NAVIDROME_LIBRARY_ID` | Target one library; leave empty to use all of them |
 | `LOG_LEVEL` | `ERROR` / `INFO` / `DEBUG` |
 
@@ -542,6 +546,7 @@ Interactive docs at `/docs`, schema at `/openapi.json`.
 | `GET` | `/api/songs?q=` | Song search (Radio seed) |
 | `GET` | `/api/music-folders` | Configured libraries |
 | `POST` | `/api/create_radio_playlist` | Build a Radio station from an artist or song seed |
+| `POST` | `/api/radio/add_to_lidarr` | Add a Radio album suggestion's artist to Lidarr directly |
 | `POST` | `/api/create_playlist` | Build a "This Is" playlist |
 | `POST` | `/api/create_playlist_with_reasoning` | As above, with the curator's reasoning |
 | `POST` | `/api/create_genre_playlist` | Build a Genre Mix |
@@ -558,8 +563,15 @@ Interactive docs at `/docs`, schema at `/openapi.json`.
 Radio's create endpoint takes `seed_type` (`artist` \| `song`), `seed_id`,
 `playlist_length`, `refresh_frequency`, an optional `playlist_name` and optional
 `library_ids`, and returns the playlist together with its `reasoning`,
-`album_suggestions` (each with a `lidarr_url` when Lidarr is configured) and
-`shortfall` record.
+`album_suggestions` (each with a `lidarr_url` when Lidarr is configured, and
+`lidarr_addable: true` when it can be added directly instead — see
+`/api/radio/add_to_lidarr` below) and `shortfall` record.
+
+`/api/radio/add_to_lidarr` takes `{"artist": "..."}` and adds that artist to
+Lidarr via its API (looked up by name, then monitored + searched), returning
+`{"ok": true, "artist_name": "..."}` on success. Available once
+`LIDARR_API_KEY`, `LIDARR_QUALITY_PROFILE_ID` and `LIDARR_ROOT_FOLDER_PATH`
+are all set.
 
 ---
 

@@ -45,7 +45,7 @@ logging.getLogger('httpcore').setLevel(logging.WARNING)
 from .navidrome_client import NavidromeClient
 from .ai_client import AIClient
 from .database import DatabaseManager, get_db
-from .schemas import CreatePlaylistRequest, CreateGenrePlaylistRequest, CreateRadioPlaylistRequest, RecreatePlaylistRequest, Playlist, RediscoverWeeklyResponse, RediscoverWeeklyV2Response, CreateRediscoverPlaylistRequest, PlaylistWithScheduleInfo
+from .schemas import CreatePlaylistRequest, CreateGenrePlaylistRequest, CreateRadioPlaylistRequest, AddToLidarrRequest, RecreatePlaylistRequest, Playlist, RediscoverWeeklyResponse, RediscoverWeeklyV2Response, CreateRediscoverPlaylistRequest, PlaylistWithScheduleInfo
 from .recipe_manager import recipe_manager
 from .rediscover import RediscoverWeekly, ReDiscoverV2Processor
 from .radio import (
@@ -54,6 +54,7 @@ from .radio import (
 )
 from .track_scoring import filter_tracks_for_this_is_playlist, mark_starred_loved
 from .lastfm_client import LastfmClient, mark_loved
+from .lidarr_client import LidarrClient
 # SYSTEM CHECK FEATURE - START
 from .services.health_check_service import HealthCheckService
 # SYSTEM CHECK FEATURE - END
@@ -302,6 +303,7 @@ def song_labels(songs) -> list:
 navidrome_client = None
 ai_client = None
 lastfm_client = None
+lidarr_client = None
 
 # Initialize scheduler (will be started on app startup)
 scheduler = None
@@ -330,6 +332,13 @@ def get_lastfm_client():
     if lastfm_client is None:
         lastfm_client = LastfmClient()
     return lastfm_client
+
+
+def get_lidarr_client():
+    global lidarr_client
+    if lidarr_client is None:
+        lidarr_client = LidarrClient()
+    return lidarr_client
 
 
 async def apply_loved_signal(tracks):
@@ -926,9 +935,14 @@ async def create_radio_playlist(
                 f"({len(track_summaries)}/{request.playlist_length}) from a pool of {len(candidate_tracks)}"
             )
 
-        # Point each "not in your library" album at Lidarr's add-new search
+        # Point each "not in your library" album at Lidarr's add-new search, and
+        # flag whether it can be added via the API directly (see add_to_lidarr)
         album_suggestions = [
-            {**suggestion, "lidarr_url": lidarr_add_url(suggestion.get("artist"), suggestion.get("album"))}
+            {
+                **suggestion,
+                "lidarr_url": lidarr_add_url(suggestion.get("artist"), suggestion.get("album")),
+                "lidarr_addable": get_lidarr_client().enabled,
+            }
             for suggestion in (album_suggestions or [])
         ]
 
@@ -977,6 +991,27 @@ async def create_radio_playlist(
         elif "Network error" in error_msg or "connecting to Navidrome" in error_msg:
             raise HTTPException(status_code=503, detail=f"Cannot connect to Navidrome server: {error_msg}")
         raise HTTPException(status_code=500, detail=f"Failed to create radio playlist: {error_msg}")
+
+@app.post("/api/radio/add_to_lidarr")
+async def add_to_lidarr(request: AddToLidarrRequest):
+    """Add a Radio album suggestion's artist to Lidarr for monitoring/download.
+
+    Looks the artist up in Lidarr and adds it directly via the API — the
+    listener-facing alternative to the plain `lidarr_url` deep link, available
+    when LIDARR_API_KEY plus a quality profile and root folder are configured
+    (see LidarrClient.enabled).
+    """
+    client = get_lidarr_client()
+    if not client.enabled:
+        raise HTTPException(
+            status_code=400,
+            detail="Lidarr isn't configured for adding artists (need LIDARR_API_KEY, "
+                   "LIDARR_QUALITY_PROFILE_ID and LIDARR_ROOT_FOLDER_PATH)."
+        )
+    result = await client.add_artist(request.artist)
+    if not result["ok"]:
+        raise HTTPException(status_code=502, detail=result["error"])
+    return result
 
 @app.get("/api/rediscover-weekly", response_model=RediscoverWeeklyResponse)
 async def get_rediscover_weekly():
@@ -1756,7 +1791,11 @@ async def refresh_radio_playlist(scheduled_playlist, db: DatabaseManager, propag
             warnings=processor.pool_warnings
         )
         album_suggestions = [
-            {**suggestion, "lidarr_url": lidarr_add_url(suggestion.get("artist"), suggestion.get("album"))}
+            {
+                **suggestion,
+                "lidarr_url": lidarr_add_url(suggestion.get("artist"), suggestion.get("album")),
+                "lidarr_addable": get_lidarr_client().enabled,
+            }
             for suggestion in (album_suggestions or [])
         ]
         if shortfall["is_short"]:
