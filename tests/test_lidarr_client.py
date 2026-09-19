@@ -13,7 +13,8 @@ import unittest
 import httpx
 
 from backend.lidarr_client import (
-    LidarrClient, build_add_artist_payload, describe_lidarr_error, pick_lookup_match
+    LidarrClient, build_add_artist_payload, describe_lidarr_error,
+    normalise_album_title, pick_album_match, pick_lookup_match
 )
 
 
@@ -50,6 +51,10 @@ class FakeHttp:
         return self.responses.pop(0)
 
 
+async def _no_sleep(_seconds):
+    return None
+
+
 def _client(url="http://lidarr.local", api_key="key", quality="3", root="/music", http=None):
     client = LidarrClient()
     client.base_url = url
@@ -57,6 +62,7 @@ def _client(url="http://lidarr.local", api_key="key", quality="3", root="/music"
     client.quality_profile_id = quality
     client.root_folder_path = root
     client.metadata_profile_id = "1"
+    client._sleep = _no_sleep
     if http is not None:
         client.client = http
     return client
@@ -64,6 +70,7 @@ def _client(url="http://lidarr.local", api_key="key", quality="3", root="/music"
 
 LOOKUP_MATCH = {"foreignArtistId": "mbid-1", "artistName": "boygenius"}
 ADDED_ARTIST = {"id": 42, "artistName": "boygenius"}
+ALBUM = {"id": 99, "title": "the record"}
 
 
 class EnabledFlagTests(unittest.TestCase):
@@ -191,6 +198,8 @@ class AddArtistTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(add_call["json"]["foreignArtistId"], "mbid-1")
         self.assertEqual(add_call["json"]["qualityProfileId"], 3)
         self.assertEqual(add_call["json"]["rootFolderPath"], "/music")
+        self.assertEqual(add_call["json"]["addOptions"]["monitor"], "all")
+        self.assertTrue(add_call["json"]["addOptions"]["searchForMissingAlbums"])
 
     async def test_the_api_key_header_is_sent(self):
         http = FakeHttp(responses=[FakeResponse([LOOKUP_MATCH]), FakeResponse(ADDED_ARTIST)])
@@ -225,6 +234,151 @@ class AddArtistTests(unittest.IsolatedAsyncioTestCase):
         result = await _client(http=http).add_artist("boygenius")
         self.assertFalse(result["ok"])
         self.assertIn("Lidarr add failed", result["error"])
+
+
+class PickAlbumMatchTests(unittest.TestCase):
+    ALBUMS = [
+        {"id": 1, "title": "Other Album"},
+        {"id": 99, "title": "the record (Deluxe Edition)"},
+    ]
+
+    def test_prefers_an_exact_case_insensitive_match(self):
+        albums = [{"id": 1, "title": "The Record"}]
+        self.assertEqual(pick_album_match(albums, "the record")["id"], 1)
+
+    def test_falls_back_to_a_normalised_match_ignoring_a_bracketed_suffix(self):
+        self.assertEqual(pick_album_match(self.ALBUMS, "The Record")["id"], 99)
+
+    def test_no_match_returns_none_rather_than_guessing(self):
+        self.assertIsNone(pick_album_match(self.ALBUMS, "Some Other Thing"))
+
+    def test_a_blank_title_returns_none(self):
+        self.assertIsNone(pick_album_match(self.ALBUMS, ""))
+
+
+class NormaliseAlbumTitleTests(unittest.TestCase):
+    def test_strips_a_bracketed_suffix_case_and_punctuation(self):
+        self.assertEqual(
+            normalise_album_title("The Record (Deluxe Edition)"),
+            normalise_album_title("the record"),
+        )
+
+    def test_a_none_title_normalises_to_empty(self):
+        self.assertEqual(normalise_album_title(None), "")
+
+
+class AddAlbumTests(unittest.IsolatedAsyncioTestCase):
+    async def test_adds_the_artist_with_nothing_monitored(self):
+        http = FakeHttp(responses=[
+            FakeResponse([LOOKUP_MATCH]),
+            FakeResponse(ADDED_ARTIST),
+            FakeResponse([ALBUM]),
+            FakeResponse(None),
+            FakeResponse(None),
+        ])
+        result = await _client(http=http).add_album("boygenius", "the record")
+        self.assertEqual(result, {"ok": True, "artist_name": "boygenius", "album_title": "the record"})
+
+        add_call = http.calls[1]
+        self.assertEqual(add_call["json"]["addOptions"]["monitor"], "none")
+        self.assertFalse(add_call["json"]["addOptions"]["searchForMissingAlbums"])
+
+    async def test_monitors_and_searches_the_matched_album(self):
+        http = FakeHttp(responses=[
+            FakeResponse([LOOKUP_MATCH]),
+            FakeResponse(ADDED_ARTIST),
+            FakeResponse([ALBUM]),
+            FakeResponse(None),
+            FakeResponse(None),
+        ])
+        await _client(http=http).add_album("boygenius", "the record")
+
+        monitor_call = http.calls[3]
+        self.assertEqual(monitor_call["method"], "PUT")
+        self.assertEqual(monitor_call["url"], "http://lidarr.local/api/v1/album/monitor")
+        self.assertEqual(monitor_call["json"], {"albumIds": [99], "monitored": True})
+
+        search_call = http.calls[4]
+        self.assertEqual(search_call["method"], "POST")
+        self.assertEqual(search_call["url"], "http://lidarr.local/api/v1/command")
+        self.assertEqual(search_call["json"], {"name": "AlbumSearch", "albumIds": [99]})
+
+    async def test_polls_until_the_album_appears(self):
+        http = FakeHttp(responses=[
+            FakeResponse([LOOKUP_MATCH]),
+            FakeResponse(ADDED_ARTIST),
+            FakeResponse([]),
+            FakeResponse([]),
+            FakeResponse([ALBUM]),
+            FakeResponse(None),
+            FakeResponse(None),
+        ])
+        result = await _client(http=http).add_album("boygenius", "the record")
+        self.assertEqual(result["album_title"], "the record")
+
+    async def test_gives_up_after_max_attempts_and_reports_a_warning(self):
+        http = FakeHttp(responses=[
+            FakeResponse([LOOKUP_MATCH]),
+            FakeResponse(ADDED_ARTIST),
+            *[FakeResponse([]) for _ in range(10)],
+        ])
+        result = await _client(http=http).add_album("boygenius", "the record")
+        self.assertTrue(result["ok"])
+        self.assertIsNone(result["album_title"])
+        self.assertIn("couldn't find", result["warning"])
+        # No monitor/search attempt was made without a matched album.
+        self.assertEqual(len(http.calls), 12)
+
+    async def test_a_duplicate_artist_is_reused_to_add_the_album(self):
+        existing_artist = {"id": 7, "artistName": "boygenius", "foreignArtistId": "mbid-1"}
+        http = FakeHttp(responses=[
+            FakeResponse([LOOKUP_MATCH]),
+            FakeResponse({"message": "already exists"}, status=400),
+            FakeResponse([existing_artist]),
+            FakeResponse([ALBUM]),
+            FakeResponse(None),
+            FakeResponse(None),
+        ])
+        result = await _client(http=http).add_album("boygenius", "the record")
+        self.assertEqual(result, {"ok": True, "artist_name": "boygenius", "album_title": "the record"})
+
+        # The album lookup used the existing artist's id, not a fresh add.
+        album_call = http.calls[3]
+        self.assertEqual(album_call["params"], {"artistId": 7})
+
+    async def test_a_duplicate_artist_that_cannot_be_found_is_reported(self):
+        http = FakeHttp(responses=[
+            FakeResponse([LOOKUP_MATCH]),
+            FakeResponse({"message": "already exists"}, status=400),
+            FakeResponse([]),
+        ])
+        result = await _client(http=http).add_album("boygenius", "the record")
+        self.assertFalse(result["ok"])
+        self.assertIn("couldn't be found", result["error"])
+
+    async def test_a_failure_to_monitor_the_found_album_is_reported_as_a_warning(self):
+        http = FakeHttp(responses=[
+            FakeResponse([LOOKUP_MATCH]),
+            FakeResponse(ADDED_ARTIST),
+            FakeResponse([ALBUM]),
+            FakeResponse({}, status=500),
+        ])
+        result = await _client(http=http).add_album("boygenius", "the record")
+        self.assertTrue(result["ok"])
+        self.assertIsNone(result["album_title"])
+        self.assertIn("couldn't monitor", result["warning"])
+
+    async def test_not_enabled_short_circuits_before_any_request(self):
+        client = _client(api_key="", http=FakeHttp())
+        result = await client.add_album("boygenius", "the record")
+        self.assertFalse(result["ok"])
+        self.assertEqual(client.client.calls, [])
+
+    async def test_a_non_numeric_quality_profile_id_is_reported_not_crashed(self):
+        http = FakeHttp(responses=[FakeResponse([LOOKUP_MATCH])])
+        result = await _client(http=http, quality="Any").add_album("boygenius", "the record")
+        self.assertFalse(result["ok"])
+        self.assertIn("numeric profile id", result["error"])
 
 
 if __name__ == "__main__":
