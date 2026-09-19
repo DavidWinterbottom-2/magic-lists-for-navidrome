@@ -7,26 +7,31 @@ Run from the repo root:
     python -m pytest tests/test_lidarr_client.py
 """
 
+import json
 import unittest
 
 import httpx
 
 from backend.lidarr_client import (
-    LidarrClient, build_add_artist_payload, pick_lookup_match
+    LidarrClient, build_add_artist_payload, describe_lidarr_error, pick_lookup_match
 )
 
 
 class FakeResponse:
-    def __init__(self, payload, status=200):
+    def __init__(self, payload, status=200, text=None, json_raises=False):
         self._payload = payload
         self.status_code = status
         self.content = b"body" if payload is not None else b""
+        self._json_raises = json_raises
+        self.text = text if text is not None else (json.dumps(payload) if payload is not None else "")
 
     def raise_for_status(self):
         if self.status_code >= 400:
             raise httpx.HTTPStatusError("boom", request=None, response=self)
 
     def json(self):
+        if self._json_raises:
+            raise ValueError("not JSON")
         return self._payload
 
 
@@ -114,6 +119,47 @@ class PickLookupMatchTests(unittest.TestCase):
 
     def test_no_results_returns_none(self):
         self.assertIsNone(pick_lookup_match([], "Anyone"))
+
+
+class DescribeLidarrErrorTests(unittest.TestCase):
+    def _http_error(self, response):
+        return httpx.HTTPStatusError("boom", request=None, response=response)
+
+    def test_extracts_validation_error_messages_from_a_list_body(self):
+        response = FakeResponse(
+            [{"propertyName": "RootFolderPath", "errorMessage": "Root folder does not exist"}],
+            status=500,
+        )
+        self.assertEqual(
+            describe_lidarr_error(self._http_error(response)),
+            "Root folder does not exist",
+        )
+
+    def test_joins_multiple_validation_messages(self):
+        response = FakeResponse(
+            [{"errorMessage": "Root folder does not exist"}, {"errorMessage": "Bad profile"}],
+            status=500,
+        )
+        self.assertEqual(
+            describe_lidarr_error(self._http_error(response)),
+            "Root folder does not exist; Bad profile",
+        )
+
+    def test_extracts_a_plain_message_body(self):
+        response = FakeResponse({"message": "Something went wrong"}, status=500)
+        self.assertEqual(describe_lidarr_error(self._http_error(response)), "Something went wrong")
+
+    def test_falls_back_to_raw_text_when_the_body_is_not_json(self):
+        response = FakeResponse(None, status=500, text="<html>502</html>", json_raises=True)
+        self.assertEqual(describe_lidarr_error(self._http_error(response)), "<html>502</html>")
+
+    def test_falls_back_to_describe_exception_for_a_non_http_error(self):
+        self.assertIn("boom", describe_lidarr_error(Exception("boom")))
+
+    def test_falls_back_to_describe_exception_when_body_and_text_are_both_empty(self):
+        response = FakeResponse({}, status=500, text="")
+        result = describe_lidarr_error(self._http_error(response))
+        self.assertTrue(result)  # never an empty string
 
 
 class AddArtistTests(unittest.IsolatedAsyncioTestCase):

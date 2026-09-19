@@ -49,6 +49,42 @@ def build_add_artist_payload(
     }
 
 
+def describe_lidarr_error(exc: Exception) -> str:
+    """Render a Lidarr API failure for logs/error messages.
+
+    `describe_exception` stringifies an `httpx.HTTPStatusError` to just its
+    status code and URL ("Server error '500 Internal Server Error' for url
+    '...'") — that's what httpx puts in the exception message, but it drops
+    the actual reason Lidarr gave in the response body (e.g. "Root folder
+    does not exist"), which is the one thing worth logging. This surfaces
+    that body when there is one, and falls back to `describe_exception` for
+    anything else — a non-HTTP failure, or a body that isn't JSON/isn't in
+    either shape Lidarr uses (a validation-error array or a plain message).
+    """
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return describe_exception(exc)
+
+    response = exc.response
+    try:
+        data = response.json()
+    except Exception:
+        text = (response.text or "").strip()
+        return text or describe_exception(exc)
+
+    if isinstance(data, list):
+        messages = [
+            item.get("errorMessage") for item in data
+            if isinstance(item, dict) and item.get("errorMessage")
+        ]
+        if messages:
+            return "; ".join(messages)
+    if isinstance(data, dict) and data.get("message"):
+        return data["message"]
+
+    text = (response.text or "").strip()
+    return text or describe_exception(exc)
+
+
 def pick_lookup_match(results: list, artist_name: str) -> Optional[Dict[str, Any]]:
     """Pick the best `artist/lookup` result for `artist_name`.
 
@@ -114,7 +150,7 @@ class LidarrClient:
                 "GET", "/api/v1/artist/lookup", params={"term": artist_name}
             )
         except Exception as e:
-            reason = describe_exception(e)
+            reason = describe_lidarr_error(e)
             logger.warning(f"⚠️ Lidarr: artist lookup failed for '{artist_name}': {reason}")
             return {"ok": False, "error": f"Lidarr lookup failed: {reason}"}
 
@@ -150,11 +186,11 @@ class LidarrClient:
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 400:
                 return {"ok": False, "error": f"'{match['artistName']}' is already in Lidarr."}
-            reason = describe_exception(e)
+            reason = describe_lidarr_error(e)
             logger.warning(f"⚠️ Lidarr: add_artist failed for '{artist_name}': {reason}")
             return {"ok": False, "error": f"Lidarr add failed: {reason}"}
         except Exception as e:
-            reason = describe_exception(e)
+            reason = describe_lidarr_error(e)
             logger.warning(f"⚠️ Lidarr: add_artist failed for '{artist_name}': {reason}")
             return {"ok": False, "error": f"Lidarr add failed: {reason}"}
 
