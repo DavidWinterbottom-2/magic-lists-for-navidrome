@@ -42,8 +42,13 @@ class CreateRadioPlaylistRequest(BaseModel):
     library_ids: List[str] = []  # List of library IDs to filter tracks
 
 class AddToLidarrRequest(BaseModel):
-    """Request schema for adding one Radio album suggestion's artist to Lidarr"""
+    """Request schema for adding one Radio album suggestion to Lidarr.
+
+    `album`, when present, adds and monitors just that one album rather than
+    the artist's whole catalogue (see LidarrClient.add_album).
+    """
     artist: str
+    album: Optional[str] = None
 
 class RecreatePlaylistRequest(BaseModel):
     """Options for a manual rebuild.

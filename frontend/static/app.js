@@ -1271,8 +1271,8 @@ function renderAlbumSuggestionsHtml(suggestions) {
         // the artist directly rather than sending the listener to Lidarr's own
         // search page; otherwise fall back to the deep link as before.
         const lidarrAction = s.lidarr_addable
-            ? `<button type="button" data-artist="${escapeHtml(s.artist)}" onclick="addSuggestionToLidarr(this)"
-                  class="inline-block text-sm font-medium text-gray-900 underline mt-2 bg-transparent border-0 p-0 cursor-pointer">Add to Lidarr</button>`
+            ? `<button type="button" data-artist="${escapeHtml(s.artist)}" data-album="${escapeHtml(s.album)}" onclick="addSuggestionToLidarr(this)"
+                  class="inline-block text-sm font-medium text-gray-900 underline mt-2 bg-transparent border-0 p-0 cursor-pointer">Add album to Lidarr</button>`
             : (s.lidarr_url ? `<a href="${escapeHtml(s.lidarr_url)}" target="_blank" rel="noopener noreferrer"
                     class="inline-block text-sm font-medium text-gray-900 underline mt-2">Add in Lidarr</a>` : '');
         return `
@@ -1286,10 +1286,12 @@ function renderAlbumSuggestionsHtml(suggestions) {
     }).join('');
 }
 
-// Adds one suggestion's artist to Lidarr via the API (see /api/radio/add_to_lidarr)
-// rather than sending the listener to Lidarr's own search page.
+// Adds one suggestion's album to Lidarr via the API (see /api/radio/add_to_lidarr)
+// rather than sending the listener to Lidarr's own search page. Adds and
+// monitors just this album, not the artist's whole catalogue.
 async function addSuggestionToLidarr(button) {
     const artist = button.dataset.artist;
+    const album = button.dataset.album;
     const originalText = button.textContent;
     button.disabled = true;
     button.textContent = 'Adding…';
@@ -1298,15 +1300,22 @@ async function addSuggestionToLidarr(button) {
         const response = await fetch('/api/radio/add_to_lidarr', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ artist })
+            body: JSON.stringify({ artist, album })
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) {
             throw new Error(data.detail || 'Failed to add to Lidarr');
         }
 
-        button.textContent = 'Added ✓';
-        showToast('success', `Added "${data.artist_name || artist}" to Lidarr`);
+        if (data.warning) {
+            // Artist added, but the album couldn't be confirmed/monitored yet
+            // (Lidarr populates a new artist's album list asynchronously).
+            button.textContent = 'Added (check Lidarr)';
+            showToast('success', data.warning);
+        } else {
+            button.textContent = 'Added ✓';
+            showToast('success', `Added "${data.album_title || album}" by ${data.artist_name || artist} to Lidarr`);
+        }
     } catch (error) {
         button.disabled = false;
         button.textContent = originalText;

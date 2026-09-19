@@ -994,12 +994,13 @@ async def create_radio_playlist(
 
 @app.post("/api/radio/add_to_lidarr")
 async def add_to_lidarr(request: AddToLidarrRequest):
-    """Add a Radio album suggestion's artist to Lidarr for monitoring/download.
+    """Add a Radio album suggestion to Lidarr for monitoring/download.
 
-    Looks the artist up in Lidarr and adds it directly via the API — the
-    listener-facing alternative to the plain `lidarr_url` deep link, available
-    when LIDARR_API_KEY plus a quality profile and root folder are configured
-    (see LidarrClient.enabled).
+    With an `album`, adds the artist and monitors/searches just that one
+    album (LidarrClient.add_album) rather than the whole catalogue — looked
+    up and added directly via the API, the listener-facing alternative to the
+    plain `lidarr_url` deep link. Available when LIDARR_API_KEY plus a
+    quality profile and root folder are configured (see LidarrClient.enabled).
     """
     client = get_lidarr_client()
     if not client.enabled:
@@ -1008,7 +1009,10 @@ async def add_to_lidarr(request: AddToLidarrRequest):
             detail="Lidarr isn't configured for adding artists (need LIDARR_API_KEY, "
                    "LIDARR_QUALITY_PROFILE_ID and LIDARR_ROOT_FOLDER_PATH)."
         )
-    result = await client.add_artist(request.artist)
+    result = (
+        await client.add_album(request.artist, request.album)
+        if request.album else await client.add_artist(request.artist)
+    )
     if not result["ok"]:
         raise HTTPException(status_code=502, detail=result["error"])
     return result

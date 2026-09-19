@@ -124,8 +124,9 @@ the next station better.
   link into Lidarr's *Add New* search, prefilled with the artist and album.
   Unset, they render as plain text. Add `LIDARR_API_KEY`,
   `LIDARR_QUALITY_PROFILE_ID` and `LIDARR_ROOT_FOLDER_PATH` on top of that and
-  the link becomes an **Add to Lidarr** button that adds the artist directly
-  via Lidarr's API — no trip through Lidarr's own search page.
+  the link becomes an **Add album to Lidarr** button that adds the artist and
+  monitors/searches *just the suggested album* directly via Lidarr's API — not
+  the artist's whole catalogue, and no trip through Lidarr's own search page.
 
 ### Keeping a station fresh
 
@@ -546,7 +547,7 @@ Interactive docs at `/docs`, schema at `/openapi.json`.
 | `GET` | `/api/songs?q=` | Song search (Radio seed) |
 | `GET` | `/api/music-folders` | Configured libraries |
 | `POST` | `/api/create_radio_playlist` | Build a Radio station from an artist or song seed |
-| `POST` | `/api/radio/add_to_lidarr` | Add a Radio album suggestion's artist to Lidarr directly |
+| `POST` | `/api/radio/add_to_lidarr` | Add + monitor one Radio album suggestion in Lidarr directly |
 | `POST` | `/api/create_playlist` | Build a "This Is" playlist |
 | `POST` | `/api/create_playlist_with_reasoning` | As above, with the curator's reasoning |
 | `POST` | `/api/create_genre_playlist` | Build a Genre Mix |
@@ -567,9 +568,16 @@ Radio's create endpoint takes `seed_type` (`artist` \| `song`), `seed_id`,
 `lidarr_addable: true` when it can be added directly instead — see
 `/api/radio/add_to_lidarr` below) and `shortfall` record.
 
-`/api/radio/add_to_lidarr` takes `{"artist": "..."}` and adds that artist to
-Lidarr via its API (looked up by name, then monitored + searched), returning
-`{"ok": true, "artist_name": "..."}` on success. Available once
+`/api/radio/add_to_lidarr` takes `{"artist": "...", "album": "..."}` and adds
+that artist to Lidarr via its API with nothing monitored, then monitors and
+searches just the named album — not the artist's whole catalogue — returning
+`{"ok": true, "artist_name": "...", "album_title": "..."}` on success. Lidarr
+populates a newly-added artist's album list asynchronously, so this polls
+briefly for the album to appear; if it still can't be found (or monitoring it
+fails), the response is `{"ok": true, "artist_name": "...", "album_title":
+null, "warning": "..."}` — the artist was added, but the album needs a manual
+check in Lidarr. Omitting `album` falls back to adding and searching the
+artist's whole catalogue (the original behaviour). Available once
 `LIDARR_API_KEY`, `LIDARR_QUALITY_PROFILE_ID` and `LIDARR_ROOT_FOLDER_PATH`
 are all set.
 
