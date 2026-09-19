@@ -170,7 +170,7 @@ one click, no trip through Lidarr's own search page:
 
 ```bash
 LIDARR_API_KEY=...                     # Settings -> General -> Security
-LIDARR_QUALITY_PROFILE_ID=1            # Settings -> Profiles -> Quality Profiles
+LIDARR_QUALITY_PROFILE_ID=1            # the numeric ID, not the profile's name — Settings -> Profiles -> Quality Profiles
 LIDARR_ROOT_FOLDER_PATH=/music         # Settings -> Media Management -> Root Folders
 ```
 
