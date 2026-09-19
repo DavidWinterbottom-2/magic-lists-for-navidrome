@@ -151,6 +151,17 @@ class AddArtistTests(unittest.IsolatedAsyncioTestCase):
         await _client(http=http, api_key="secret").add_artist("boygenius")
         self.assertEqual(http.calls[0]["headers"]["X-Api-Key"], "secret")
 
+    async def test_a_non_numeric_quality_profile_id_is_reported_not_crashed(self):
+        # Lidarr's built-in default profile is literally named "Any" — an easy
+        # value to mistake for the numeric id LIDARR_QUALITY_PROFILE_ID needs.
+        http = FakeHttp(responses=[FakeResponse([LOOKUP_MATCH])])
+        client = _client(http=http, quality="Any")
+        result = await client.add_artist("boygenius")
+        self.assertFalse(result["ok"])
+        self.assertIn("numeric profile id", result["error"])
+        # No add attempt was made — only the lookup call happened.
+        self.assertEqual(len(http.calls), 1)
+
     async def test_a_duplicate_add_is_reported_as_already_added(self):
         http = FakeHttp(responses=[
             FakeResponse([LOOKUP_MATCH]),

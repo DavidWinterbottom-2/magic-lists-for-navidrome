@@ -122,11 +122,28 @@ class LidarrClient:
         if not match:
             return {"ok": False, "error": f"No Lidarr match found for '{artist_name}'."}
 
+        # LIDARR_QUALITY_PROFILE_ID/LIDARR_METADATA_PROFILE_ID must be the numeric
+        # profile id, not its display name (Lidarr's default is literally named
+        # "Any", an easy mix-up) — caught here rather than left to crash the
+        # request, since `enabled` only checks the vars are non-empty.
+        try:
+            quality_profile_id = int(self.quality_profile_id)
+            metadata_profile_id = int(self.metadata_profile_id)
+        except ValueError:
+            return {
+                "ok": False,
+                "error": (
+                    "LIDARR_QUALITY_PROFILE_ID/LIDARR_METADATA_PROFILE_ID must be the "
+                    "numeric profile id (Settings -> Profiles in Lidarr, or GET "
+                    "/api/v1/qualityprofile), not the profile's name."
+                ),
+            }
+
         payload = build_add_artist_payload(
             match,
-            quality_profile_id=int(self.quality_profile_id),
+            quality_profile_id=quality_profile_id,
             root_folder_path=self.root_folder_path,
-            metadata_profile_id=int(self.metadata_profile_id),
+            metadata_profile_id=metadata_profile_id,
         )
         try:
             added = await self._request("POST", "/api/v1/artist", json=payload)
