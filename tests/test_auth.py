@@ -91,6 +91,7 @@ class EnabledGateTests(unittest.TestCase):
         "AZURE_CLIENT_SECRET": "client-secret",
         "AZURE_TENANT_ID": "consumers",
         "SESSION_SECRET": "test-secret",
+        "ALLOWED_EMAILS": "david@example.com",
     }
 
     def test_unauthenticated_human_is_redirected_to_login(self):
@@ -123,6 +124,34 @@ class EnabledGateTests(unittest.TestCase):
         with _reloaded(AUTH_DISABLED="false") as mod:
             with self.assertRaises(RuntimeError):
                 mod.install(FastAPI())
+
+    def test_empty_allow_list_refuses_to_start(self):
+        # An empty ALLOWED_EMAILS used to admit any account the tenant could
+        # sign in; with "consumers" that is any Microsoft account in the world.
+        creds = {k: v for k, v in self._CREDS.items() if k != "ALLOWED_EMAILS"}
+        with _reloaded(**creds) as mod:
+            with self.assertRaisesRegex(RuntimeError, "ALLOWED_EMAILS is empty"):
+                mod.install(FastAPI())
+
+    def test_multi_tenant_alias_refuses_to_start(self):
+        for tenant in ("common", "Organizations"):
+            with _reloaded(**{**self._CREDS, "AZURE_TENANT_ID": tenant}) as mod:
+                with self.assertRaisesRegex(RuntimeError, "admits any Entra tenant"):
+                    mod.install(FastAPI())
+
+
+class AllowListTests(unittest.TestCase):
+    def test_matches_case_insensitively(self):
+        self.assertTrue(auth_module.is_allowed("David@Example.com", {"david@example.com"}))
+        self.assertFalse(auth_module.is_allowed("intruder@example.com", {"david@example.com"}))
+
+    def test_empty_list_or_email_admits_no_one(self):
+        self.assertFalse(auth_module.is_allowed("anyone@example.com", set()))
+        self.assertFalse(auth_module.is_allowed("", {"david@example.com"}))
+
+    def test_single_tenant_with_a_list_is_fine(self):
+        for tenant in ("consumers", "8cc87aa5-d9f6-43e0-aa12-00133c5a98d3"):
+            self.assertEqual(auth_module.config_errors(tenant, {"d@x.com"}), [])
 
 
 if __name__ == "__main__":

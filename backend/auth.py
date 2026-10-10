@@ -63,6 +63,30 @@ _PUBLIC_EXACT = {
 }
 
 
+# Tenant aliases that accept sign-ins from any Entra tenant, whose admins can
+# put any address in an unverified email claim.
+_MULTI_TENANT_ALIASES = {"common", "organizations"}
+
+
+def config_errors(tenant: str, allowed: set[str]) -> list[str]:
+    """Why these auth settings are unsafe to run with (empty when they're fine)."""
+    errors = []
+    if tenant.lower() in _MULTI_TENANT_ALIASES:
+        errors.append(
+            f"AZURE_TENANT_ID={tenant!r} admits any Entra tenant; use your tenant ID "
+            "(or 'consumers' for personal Microsoft accounts only)")
+    if not allowed:
+        errors.append(
+            "ALLOWED_EMAILS is empty, which would let in any account the tenant "
+            "can sign in; list who may use the app")
+    return errors
+
+
+def is_allowed(email: str, allowed: set[str]) -> bool:
+    """Only an address on the allow-list gets in; an empty list admits no one."""
+    return bool(email) and email.strip().lower() in allowed
+
+
 def _is_public(path: str) -> bool:
     return path in _PUBLIC_EXACT or path.startswith(_PUBLIC_PREFIXES)
 
@@ -142,6 +166,9 @@ def install(app: FastAPI) -> None:
             "Auth is enabled but these env vars are missing: "
             + ", ".join(missing)
             + ". Set them, or set AUTH_DISABLED=true for a trusted LAN.")
+    unsafe = config_errors(TENANT, ALLOWED_EMAILS)
+    if unsafe:
+        raise RuntimeError("Unsafe auth configuration: " + "; ".join(unsafe))
 
     secret = SESSION_SECRET or secrets.token_urlsafe(32)
     if not SESSION_SECRET:
@@ -171,7 +198,7 @@ def install(app: FastAPI) -> None:
             return PlainTextResponse(f"Login failed: {exc.error}", status_code=401)
         info = token.get("userinfo") or {}
         email = (info.get("email") or info.get("preferred_username") or "").lower()
-        if ALLOWED_EMAILS and email not in ALLOWED_EMAILS:
+        if not is_allowed(email, ALLOWED_EMAILS):
             return PlainTextResponse(
                 f"Access denied for {email or 'this account'}.", status_code=403)
         request.session["user"] = email or "authenticated"
