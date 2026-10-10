@@ -1,6 +1,6 @@
 # REPO-STANDARDS
 
-**Version:** 1.17-seed · **Owner:** Hermes (self-hosted standards & skills agent)
+**Version:** 1.18-seed · **Owner:** Hermes (self-hosted standards & skills agent)
 
 > **Companion:** deployment-layer security — how a *hosted* service is exposed and how access
 > to it is controlled — lives in [`HOSTING-SECURITY.md`](HOSTING-SECURITY.md). This doc
@@ -46,6 +46,16 @@ reviewed by the model against the repo's actual contents.
   - **Claude, ad-hoc** (no skill, no OpenSpec change) — `claude/<description>-<id>`
     (e.g. `claude/whatsapp-sentiment-analysis-0ss56y`).
   - **Human work** — `<type>/<description>` (`feat`, `chore`, `docs`, …).
+- **No dedicated skill for naming.** The scheme above is definitive and already
+  required to be documented in every repo's own `CLAUDE.md` / `AGENTS.md` (§6) —
+  Hermes must not propose or create a stand-alone "branch naming" skill; doing so
+  duplicates this section and the repo's own docs rather than filling a gap. (This
+  concept was independently proposed three times under three different names
+  between 2026-08-18 and 2026-09-12 — `branch-naming-convention`,
+  `enforce-branch-naming`, `configure-feature-branch-naming` — each derived from a
+  different repo and each dismissed; a per-repo `.hermes-ignore` entry stops the
+  repo that already triggered it, but not the next one to do so, hence this
+  standing rule.)
 - **Checkable:** the default branch is `main`, is **protected** (a ruleset or classic branch
   protection), and **requires a pull request** to merge — Hermes verifies this via the GitHub
   API, which also reports the repo's `delete_branch_on_merge` setting. CI is configured
@@ -108,7 +118,7 @@ reviewed by the model against the repo's actual contents.
   canonical **Summary / Changes / Validation** skeleton. GitHub pre-fills it into any PR opened
   in the web UI, and the `create-pr` skill fills the same file for Claude-authored PRs, so one
   house style covers both paths. The template is org-owned: it ships from the
-  `devcontainer-sandbox` template and propagates via `template-sync` — don't hand-roll a
+  `devcontainer-sandbox` template and propagates via `template-sync`; don't hand-roll a
   divergent per-repo copy; amend the shared one.
 - One logical change per PR; keep diffs reviewable.
 - When a PR merges, add a dated entry to the affected service/component **README Updates**
@@ -325,6 +335,16 @@ they happen on cadence. The evidence is a **committed review log** the reviewer 
 ---
 
 ## Change log
+
+- **2026-09-14 — v1.18-seed.** §1: added **"No dedicated skill for naming"** — the branch
+  naming scheme is already definitive here and each repo already documents it in its own
+  `CLAUDE.md`/`AGENTS.md` (§6), so Hermes must not propose a standalone skill for it. Prompted
+  by the same concept being independently proposed three times under three different names
+  (`branch-naming-convention`, `enforce-branch-naming`, `configure-feature-branch-naming`)
+  between 2026-08-18 and 2026-09-12, each derived from a different repo and each dismissed —
+  a per-repo `.hermes-ignore` entry only stops the repo that already triggered a given
+  proposal, not the next one, so the rule is stated here instead, where every repo is
+  measured against it.
 
 - **2026-08-19 — v1.17-seed.** §1: added **"a merged branch is deleted"** — enable the repo's
   "Automatically delete head branches" setting rather than leaving merged branches to pile up.
