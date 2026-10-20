@@ -145,3 +145,51 @@ details ol li::marker {
         filter: invert(1) hue-rotate(180deg);
     }
 }
+
+/* ---- Header: one line, always (LOOK-AND-FEEL "Header rules") ------------
+   Order in .mobile-toggle: phone menu → Aa text size → theme toggle (last).
+   Layout is pinned here as well as by the Tailwind utilities on the markup, so
+   the bar can never wrap even if the CDN stylesheet loads late or not at all. */
+.ml-headbar {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.ml-headbar > :first-child {
+    min-width: 0;
+}
+.mobile-toggle {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    flex: none;
+    gap: 8px;
+}
+/* Header chrome is fixed-size (px), like the shared .wb-iconbtn, so the bar
+   stays the same height at every text size; the Tailwind py-4 / size-9 on the
+   markup are rem and would grow with Large text. */
+.ml-headnav {
+    padding: 16px !important;
+}
+.mobile-toggle > #hs-navbar-alignment-collapse {
+    width: 36px !important;
+    height: 36px !important;
+}
+/* The shared Aa button, sized to match this app's 36px header buttons. */
+.mobile-toggle .wb-textsize > summary {
+    width: 36px;
+    height: 36px;
+    border-radius: var(--r-sm);
+}
+/* The wordmark is 2.5rem (h-10) tall; on a small phone shrink it so logo +
+   three buttons still fit on one line at 320px, at every text size. */
+img.ml-logo {
+    max-width: 100%;
+}
+@media (max-width: 400px) {
+    img.ml-logo {
+        height: 30px !important;
+    }
+}

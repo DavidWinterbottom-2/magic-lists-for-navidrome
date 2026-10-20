@@ -8,6 +8,10 @@
    scheme, handled entirely in CSS). A toggle stores an explicit 'light'/'dark'
    under localStorage 'wb-theme', which wins via :root[data-theme=...].
    Wire a button with  data-wb-theme-toggle  to flip it.
+
+   Text size: buttons with  data-wb-text-size="small|normal|large"  (inside a
+   <details class="wb-textsize">) set html[data-text-size], saved per device
+   under localStorage 'wb-text-size' and applied here before first paint.
    ========================================================================= */
 (function () {
   var KEY = "wb-theme";
@@ -41,6 +45,29 @@
     if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
   } catch (e) {}
 
+  /* Text size, also before first paint. 'text-size' is the chores app's old key. */
+  var TS_KEY = "wb-text-size";
+  function savedTextSize() {
+    try { return localStorage.getItem(TS_KEY) || localStorage.getItem("text-size"); } catch (e) { return null; }
+  }
+  function applyTextSize(size) {
+    if (size === "small" || size === "large") root.setAttribute("data-text-size", size);
+    else root.removeAttribute("data-text-size");
+  }
+  applyTextSize(savedTextSize());
+  function syncTextSize() {
+    var current = root.getAttribute("data-text-size") || "normal";
+    var opts = document.querySelectorAll("[data-wb-text-size]");
+    for (var i = 0; i < opts.length; i++) {
+      opts[i].setAttribute("aria-pressed", String(opts[i].getAttribute("data-wb-text-size") === current));
+    }
+  }
+  function setTextSize(size) {
+    applyTextSize(size);
+    try { localStorage.setItem(TS_KEY, size); localStorage.removeItem("text-size"); } catch (e) {}
+    syncTextSize();
+  }
+
   function toggle() {
     var next = current() === "dark" ? "light" : "dark";
     try { localStorage.setItem(KEY, next); } catch (e) {}
@@ -49,13 +76,24 @@
 
   function init() {
     sync();
+    syncTextSize();
     document.addEventListener("click", function (ev) {
       var t = ev.target.closest ? ev.target.closest("[data-wb-theme-toggle]") : null;
-      if (t) { ev.preventDefault(); toggle(); }
+      if (t) { ev.preventDefault(); toggle(); return; }
+      var ts = ev.target.closest ? ev.target.closest("[data-wb-text-size]") : null;
+      if (ts) {
+        setTextSize(ts.getAttribute("data-wb-text-size"));
+        var menu = ts.closest("details");
+        if (menu) menu.open = false;
+        return;
+      }
+      /* A click anywhere else closes an open text-size menu. */
+      var open = document.querySelectorAll("details.wb-textsize[open]");
+      for (var i = 0; i < open.length; i++) if (!open[i].contains(ev.target)) open[i].open = false;
     });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
 
-  window.wbTheme = { toggle: toggle, apply: apply, current: current };
+  window.wbTheme = { toggle: toggle, apply: apply, current: current, setTextSize: setTextSize, syncTextSize: syncTextSize };
 })();

@@ -107,7 +107,7 @@
             font-optical-sizing: auto;
             font-style: normal;
             -webkit-font-smoothing: antialiased;
-            font-size:16px; 
+            font-size: 1rem; /* rem, so the Aa text-size control scales it */
         }
 
         /* Container styling */
@@ -127,23 +127,33 @@
     <div id="magic" class="flex flex-col min-h-screen md:max-w-[1024px] md:mx-auto relative">
         <!-- Navbar -->
         <header class="bg-gray-100 top-0 z-50">
-            <nav class="py-4 px-4"> 
-                <div class="flex items-center justify-between">
+            <nav class="ml-headnav py-4 px-4">
+                <div class="ml-headbar flex items-center justify-between">
                     <div class="flex items-center">
                         <a class="flex items-center text-xl font-bold" href="#" data-page="home">
                             <img src="/static/assets/ml-logo.svg" alt="Magic Lists" class="ml-logo h-10 w-auto">
                         </a>
                     </div>
                     <div class="mobile-toggle flex items-center gap-x-2">
-                        <!-- Light/dark toggle — wired by winterbottom-theme.js -->
-                        <button type="button" id="theme-toggle" data-wb-theme-toggle aria-label="Switch theme">
-                            <span data-wb-theme-icon aria-hidden="true">☀</span>
-                        </button>
-
                         <button type="button" class="md:hidden hs-collapse-toggle relative size-9 flex justify-center items-center gap-x-2 rounded-lg border border-gray-200 bg-white text-gray-800 shadow-2xs hover:bg-gray-50 focus:outline-hidden focus:bg-gray-50 disabled:opacity-50 disabled:pointer-events-none " id="hs-navbar-alignment-collapse" aria-expanded="false" aria-controls="hs-navbar-alignment" aria-label="Toggle navigation" data-hs-collapse="#hs-navbar-alignment">
                             <svg class="hs-collapse-open:hidden shrink-0 size-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" x2="21" y1="6" y2="6"/><line x1="3" x2="21" y1="12" y2="12"/><line x1="3" x2="21" y1="18" y2="18"/></svg>
                             <svg class="hs-collapse-open:block hidden shrink-0 size-4" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                             <span class="sr-only">Menu</span>
+                        </button>
+
+                        <!-- Text size — the shared component, wired by winterbottom-theme.js -->
+                        <details class="wb-textsize">
+                            <summary class="wb-iconbtn" aria-label="Text size" title="Text size">Aa</summary>
+                            <div class="wb-textsize__menu" role="group" aria-label="Text size">
+                                <button type="button" data-wb-text-size="small">Small</button>
+                                <button type="button" data-wb-text-size="normal">Normal</button>
+                                <button type="button" data-wb-text-size="large">Large</button>
+                            </div>
+                        </details>
+
+                        <!-- Light/dark toggle — wired by winterbottom-theme.js -->
+                        <button type="button" id="theme-toggle" data-wb-theme-toggle aria-label="Switch theme">
+                            <span data-wb-theme-icon aria-hidden="true">☀</span>
                         </button>
                     </div>
                </div>
