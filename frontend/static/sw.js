@@ -12,7 +12,7 @@
  * installability requirement.
  */
 
-const CACHE = 'magiclists-shell-v1';
+const CACHE = 'magiclists-shell-v2';
 const OFFLINE_URL = '/static/offline.html';
 
 self.addEventListener('install', event => {
