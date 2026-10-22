@@ -1,0 +1,47 @@
+[
+  {
+    "name": "stage:define",
+    "color": "5319e7",
+    "description": "Board stage: Work out what the issue is for"
+  },
+  {
+    "name": "stage:investigate",
+    "color": "5319e7",
+    "description": "Board stage: Find out what's going on"
+  },
+  {
+    "name": "stage:spec",
+    "color": "5319e7",
+    "description": "Board stage: Write down what will be built"
+  },
+  {
+    "name": "stage:implement",
+    "color": "5319e7",
+    "description": "Board stage: Being built"
+  },
+  {
+    "name": "stage:test",
+    "color": "5319e7",
+    "description": "Board stage: Being tested"
+  },
+  {
+    "name": "stage:review",
+    "color": "5319e7",
+    "description": "Board stage: Waiting on review"
+  },
+  {
+    "name": "stage:deploy",
+    "color": "5319e7",
+    "description": "Board stage: Being deployed"
+  },
+  {
+    "name": "claude",
+    "color": "d97757",
+    "description": "Have Claude work this PR (claude.yml)"
+  },
+  {
+    "name": "template-sync",
+    "color": "c5def5",
+    "description": "Automated sync from the devcontainer-sandbox template"
+  }
+]

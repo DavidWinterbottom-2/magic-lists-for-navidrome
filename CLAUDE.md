@@ -33,18 +33,36 @@ user. Keep the container aligned with the template as it evolves (the
 ## Shared skills
 
 The shared Claude Code skills library lives in the template's `.claude/skills/`.
-This repo vendors the subset relevant to app development under
-[`.claude/skills/`](.claude/skills/). The synced set is declared in
-[`.github/template-sync.json`](.github/template-sync.json) (`shared_skills`); to
-carry another shared skill, add its directory name there. The repo's own
-operational skills, if any, go in `own_skills` and are never touched by the sync.
+The template's `.claude/skills/.hermes-skills` manifest decides which skills are
+shared; the template-sync workflow copies those into [`.claude/skills/`](.claude/skills/)
+and never deletes a skill that exists only here, so a repo-local skill is safe.
 
 ## Template sync
 
-[`.github/workflows/template-sync.yml`](.github/workflows/template-sync.yml) runs
-[`scripts/sync-from-template.sh`](scripts/sync-from-template.sh) on a schedule and
-opens a PR whenever a vendored skill or standards doc drifts from the template.
-It needs a `TEMPLATE_SYNC_TOKEN` repo secret with `Contents:read` on the template
-(to read it) **and** `pull-requests:write` on this repo (to open the drift PR —
-the default `GITHUB_TOKEN` is refused at PR creation by the "Allow Actions to
-create PRs" setting). A classic PAT with the `repo` scope covers both.
+[`.github/workflows/template-sync.yml`](.github/workflows/template-sync.yml) is a
+verbatim copy of the template's workflow. It runs weekly and opens up to two PRs
+when this repo has drifted from the template:
+
+- **`template-sync/skills-content`**: `.claude/skills/**` only. It requests
+  auto-merge (squash) as soon as it opens.
+- **`template-sync/skills`**: the files that run with real permissions:
+  `.claude/agents/`, `.claude/hooks/` (including the claude-tracker
+  `report.sh`/`report.py` hooks), the hook registrations in
+  `.claude/settings.json` (merged in, so the repo's own hooks stay), this
+  workflow, `claude.yml`, `labels.json` + `labels.yml`, and the PR template.
+  Always reviewed by hand.
+
+It needs a `TEMPLATE_SYNC_TOKEN` repo secret: a PAT with Contents (read/write),
+Workflows (write) and Pull requests (write) on this repo, plus Contents:read on
+the template. A classic PAT needs the `repo` + `workflow` scopes. The PAT is
+required because the default `GITHUB_TOKEN` can't push `.github/workflows/*`
+files and can't open PRs here.
+
+The workflow does **not** sync `standards/`. To refresh
+[`standards/REPO-STANDARDS.md`](standards/REPO-STANDARDS.md), run
+[`scripts/sync-from-template.sh`](scripts/sync-from-template.sh) by hand. It
+reads [`.github/template-sync.json`](.github/template-sync.json) and still
+leaves out `HOSTING-SECURITY.md`.
+
+To opt this repo out of claude-tracker reporting, commit an empty
+`.claude/tracker-off`.

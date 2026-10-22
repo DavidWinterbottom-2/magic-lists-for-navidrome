@@ -1,0 +1,39 @@
+name: labels
+
+# Creates (or updates) the shared labels listed in .github/labels.json in this
+# repo: the claude-tracker board's `stage:<name>` labels (claude-tracker
+# decision 13), plus the `claude` and `template-sync` labels the other shared
+# workflows apply. Template-owned: both files ride along with template-sync, so
+# edit them in devcontainer-sandbox, not downstream.
+#
+# Runs with the default GITHUB_TOKEN (issues: write covers labels), so it needs
+# no PAT. `--force` updates a label's colour and description; labels are never
+# deleted, so a repo's own labels are left alone.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/labels.json
+      - .github/workflows/labels.yml
+  workflow_dispatch:
+
+jobs:
+  labels:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create or update the shared labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          jq -c '.[]' .github/labels.json | while read -r label; do
+            gh label create "$(jq -r .name <<< "$label")" \
+              --repo "$GITHUB_REPOSITORY" --force \
+              --color "$(jq -r .color <<< "$label")" \
+              --description "$(jq -r .description <<< "$label")"
+          done
