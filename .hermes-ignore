@@ -4,7 +4,9 @@
 # proposal / "apply the '<name>' skill" nudge for that skill.
 
 # Branch naming — already fully specified in devcontainer-sandbox's
-# REPO-STANDARDS.md §1 and documented in this repo's own CLAUDE.md. Hermes has
+# REPO-STANDARDS.md §1 and documented in this repo's own AGENTS.md ("Every
+# change"). Since REPO-STANDARDS v1.18 §1 ("No dedicated skill for naming") makes
+# this a standing fleet-wide rule; the entries below stay as a local backstop. Hermes has
 # proposed a dedicated "branch naming convention" skill three times under three
 # different names since 2026-08-18 (branch-naming-convention, enforce-branch-naming,
 # configure-feature-branch-naming — devcontainer-sandbox PRs #95/#105/#108, all
@@ -14,4 +16,4 @@
 skill:branch-naming-convention
 skill:enforce-branch-naming
 skill:configure-feature-branch-naming
-Do not propose a skill for branch naming conventions — already fully specified in REPO-STANDARDS.md §1 and this repo's own CLAUDE.md.
+Do not propose a skill for branch naming conventions — already fully specified in REPO-STANDARDS.md §1 and this repo's own AGENTS.md.
