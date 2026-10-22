@@ -604,8 +604,9 @@ ruff check --select=E9,F63,F7,F82 .
   that doesn't bump it.
 - **Standards** — [`standards/REPO-STANDARDS.md`](standards/REPO-STANDARDS.md) is
   a vendored copy of the canonical doc in the template. Don't hand-edit it;
-  [`template-sync.yml`](.github/workflows/template-sync.yml) opens a PR when a
-  vendored skill or standards doc drifts.
+  refresh it with `scripts/sync-from-template.sh`.
+  [`template-sync.yml`](.github/workflows/template-sync.yml) opens PRs when the
+  shared skills, agents, hooks or workflows drift from the template.
 - **Conventions** — see [`CLAUDE.md`](CLAUDE.md) and [`AGENTS.md`](AGENTS.md).
   Branch off `main`, one logical change per PR.
 

@@ -1,111 +1,326 @@
-name: Template sync
+name: template-sync
 
-# Keep this repo's shared assets current with the devcontainer-sandbox template:
-# the vendored Claude Code skills under .claude/skills/ and the standards docs
-# under standards/. This job pulls only what is declared in
-# .github/template-sync.json and opens a PR when a vendored copy has drifted.
+# Pulls shared assets from the devcontainer-sandbox template and opens PR(s)
+# when this repo has drifted behind it. Retrofit onto ANY repo (bootstrapped
+# from the template or not) by adding this file AND a repo secret
+# TEMPLATE_SYNC_TOKEN.
 #
-# TEMPLATE_SYNC_TOKEN does two things and so needs two scopes:
-#   - Contents:read on DavidWinterbottom-2/devcontainer-sandbox, to read the
-#     (private) template — the workflow's own GITHUB_TOKEN cannot read another
-#     private repo, so if the secret is absent the sync step fails loudly rather
-#     than silently drifting.
-#   - pull-requests:write on THIS repo, to open the drift PR — GITHUB_TOKEN is
-#     refused at PR creation by the "Allow GitHub Actions to create and approve
-#     pull requests" repo setting, so the PR step uses the PAT instead.
-# A classic PAT with the `repo` scope covers both; a fine-grained PAT needs
-# Contents:read on the template and Pull requests:write here.
+# Split into two independent tracks so the low-risk one can merge itself:
+#
+#   CONTENT  — .claude/skills/** only. Pure documentation/instructions, no
+#     executable surface, and authored by the repo owner in the first place
+#     (this template). Opens (or refreshes) a PR on
+#     `template-sync/skills-content` and immediately requests GitHub
+#     auto-merge (squash). That only actually completes with zero manual
+#     clicks if this repo's branch protection/ruleset lists the
+#     TEMPLATE_SYNC_TOKEN identity as a bypass actor for required reviews —
+#     a one-time, per-repo setting this workflow cannot configure itself
+#     (Settings → Rules → Rulesets → the rule guarding the default branch →
+#     Bypass list). Without that bypass it behaves exactly like GitHub
+#     auto-merge always has: merges the moment someone approves.
+#   CONTROL  — .claude/agents/**, .claude/hooks/**, .claude/settings.json,
+#     this workflow file, claude.yml, labels.yml + labels.json, and the PR
+#     template. This executes with real permissions inside Claude Code sessions or CI, so it always
+#     stays a normal, manually-reviewed PR on `template-sync/skills` (the
+#     original branch name, so an already-open PR there keeps working).
+#
+# TEMPLATE_SYNC_TOKEN must be a PAT with, on the downstream repo,
+# contents:write + workflows:write + pull-requests:write, and contents:read on
+# this private template repo so the workflow can check it out. A classic PAT with
+# the `repo` + `workflow` scopes covers both; a fine-grained PAT needs Contents
+# (read/write), Workflows (write) and Pull requests (write). Both pushes AND both
+# PRs are done with this PAT — NOT the default GITHUB_TOKEN — for two reasons the
+# default token cannot satisfy:
+#   1. The control track copies workflow files (.github/workflows/*); GitHub
+#      refuses to let the automatic GITHUB_TOKEN create/update those without the
+#      `workflows` scope, which it can never hold, so the push is rejected outright.
+#   2. Creating a PR with a PAT sidesteps the org/repo "Allow GitHub Actions to
+#      create and approve pull requests" setting, which blocks GITHUB_TOKEN.
+# The .devcontainer/ is intentionally NOT auto-synced: it carries per-project
+# deltas (see .devcontainer/TEMPLATE-SYNC.md) and wants a 3-way merge.
 
 on:
   schedule:
-    - cron: "0 0 * * *"
+    # Weekly, Sundays at 22:00 UTC — a few hours before Hermes's weekly cycle
+    # (Mondays 01:00 UTC, CYCLE_TIMEZONE=UTC) so Hermes always reasons on
+    # freshly-synced skills. Daily was replaced with weekly: daily syncs
+    # churned out near-duplicate drift PRs faster than they could be reviewed.
+    - cron: "0 22 * * 0"
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
-
-concurrency:
-  group: template-sync
-  cancel-in-progress: false
-
 jobs:
-  sync:
+  sync-skills:
     runs-on: ubuntu-latest
+    # No-op in the template repo itself; only downstream copies sync.
+    if: github.repository != 'DavidWinterbottom-2/devcontainer-sandbox'
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Sync shared skills and standards from the template
+      - name: Require the sync PAT
         env:
-          GH_TOKEN: ${{ secrets.TEMPLATE_SYNC_TOKEN }}
+          TOKEN: ${{ secrets.TEMPLATE_SYNC_TOKEN }}
         run: |
-          if [ -z "${GH_TOKEN}" ]; then
-            echo "::error::TEMPLATE_SYNC_TOKEN secret is not set — it needs Contents:read on the devcontainer-sandbox template. The default GITHUB_TOKEN cannot read another private repo."
+          if [ -z "$TOKEN" ]; then
+            echo "::error::TEMPLATE_SYNC_TOKEN is not set. It must be a PAT with contents:write + workflows:write + pull-requests:write on this repo and contents:read on the template (classic PAT: repo + workflow scopes)."
             exit 1
           fi
-          scripts/sync-from-template.sh
 
-      - name: Open a PR if a vendored asset drifted
+      # Check out with the PAT: checkout saves its token as the git credential,
+      # and only the PAT may push .github/workflows/* files.
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.TEMPLATE_SYNC_TOKEN }}
+
+      - name: Fetch the template (private → needs a read token)
+        uses: actions/checkout@v4
+        with:
+          repository: DavidWinterbottom-2/devcontainer-sandbox
+          token: ${{ secrets.TEMPLATE_SYNC_TOKEN }}
+          path: .template-src
+          fetch-depth: 1
+
+      - name: Content track — sync .claude/skills/**, open PR, request auto-merge
         env:
-          # Create the PR with the PAT, not the default GITHUB_TOKEN: opening a PR
-          # with GITHUB_TOKEN is blocked by the "Allow GitHub Actions to create and
-          # approve pull requests" repo setting.
           GH_TOKEN: ${{ secrets.TEMPLATE_SYNC_TOKEN }}
         run: |
           set -euo pipefail
-
-          if [ -z "$(git status --porcelain .claude/skills standards)" ]; then
-            echo "Vendored assets already match the template — nothing to do."
-            exit 0
-          fi
-
-          # §2: a skills/standards-only sync touches no application code, but this
-          # repo's version-bumped check is unconditional (fires on every PR), so a
-          # sync PR that didn't bump the version could never merge. Bump the single
-          # whole-repo version source (the one bump-my-version config in
-          # pyproject.toml) inside the same commit. Over-bumping a docs-only PR is
-          # harmless — images deploy by SHA.
-          python3 -m pip install --quiet --upgrade bump-my-version
-          # --allow-dirty: the tree already carries the synced assets.
-          # --no-commit/--no-tag: the commit is made below with the synced files.
-          bump-my-version bump patch --allow-dirty --no-commit --no-tag
-
-          branch="template-sync/assets"
+          tpl=.template-src
+          default_branch="$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)"
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git checkout -B "$branch"
-          git add .claude/skills standards pyproject.toml
-          git commit -m "Sync shared skills and standards from devcontainer-sandbox template"
-          # Plain --force, not --force-with-lease: the runner does a shallow
-          # checkout of the default branch only, so it has no remote-tracking ref
-          # for an already-existing template-sync/assets branch and the lease
-          # can't be verified. This branch is a bot-owned, throwaway ref always
-          # regenerated from the default branch, so overwriting it is correct.
-          git push --force -u origin "$branch"
+          mkdir -p .claude/skills
+          manifest=$tpl/.claude/skills/.hermes-skills
+          if [ -f "$manifest" ]; then
+            # Only propagate the skills the manifest marks as shared; the rest stay
+            # dev-environment-only in the template. Never delete repo-local skills.
+            cp "$manifest" .claude/skills/.hermes-skills
+            grep -vE '^\s*(#|$)' "$manifest" | while read -r s; do
+              s=$(echo "$s" | xargs)
+              [ -n "$s" ] && [ -d "$tpl/.claude/skills/$s" ] \
+                && rsync -a "$tpl/.claude/skills/$s/" ".claude/skills/$s/"
+            done
+          else
+            rsync -a "$tpl/.claude/skills/" .claude/skills/
+          fi
 
-          if [ -n "$(gh pr list --head "$branch" --state open --json number --jq '.[].number')" ]; then
-            echo "PR already open for ${branch}; updated its branch."
+          if [ -z "$(git status --porcelain .claude/skills)" ]; then
+            echo "Skills already match the template — nothing to sync in the content track."
             exit 0
           fi
 
+          # Bump the single whole-repo version source, same rule as the control
+          # track below (see its comment for the full rationale): a skills-only
+          # sync touches no application code, but an unconditional §2 check still
+          # needs *a* bump to pass. Multi-component repos are skipped — bumping
+          # an arbitrary component for a repo-wide skills sync would be spurious.
+          bumped=""
+          mapfile -t cfgs < <(grep -rlE '^\[(tool\.)?bumpversion\]' \
+                  --include=pyproject.toml --include=.bumpversion.toml \
+                  --include=.bumpversion.cfg --include=setup.cfg . 2>/dev/null || true)
+          if [ "${#cfgs[@]}" -eq 1 ]; then
+            dir=$(dirname "${cfgs[0]}")
+            python3 -m pip install --quiet --upgrade bump-my-version
+            ( cd "$dir" && bump-my-version bump patch --allow-dirty --no-commit --no-tag )
+            bumped="$dir"
+          elif [ "${#cfgs[@]}" -eq 0 ]; then
+            if [ -f gradle.properties ] && grep -qE '^version=[0-9]+\.[0-9]+\.[0-9]+' gradle.properties; then
+              gver=$(grep -m1 -E '^version=' gradle.properties | sed -E 's/^version=([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+              IFS=. read -r MA MI PA <<< "$gver"
+              sed -i -E "s/^version=[0-9].*/version=${MA}.${MI}.$((PA + 1))/" gradle.properties
+              bumped="gradle.properties"
+            elif [ -f build.gradle.kts ] && grep -qE '^[[:space:]]*version = "[0-9]+\.[0-9]+\.[0-9]+' build.gradle.kts; then
+              gver=$(grep -m1 -E '^[[:space:]]*version = "[0-9]+\.[0-9]+\.[0-9]+' build.gradle.kts | sed -E 's/.*version = "([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+              IFS=. read -r MA MI PA <<< "$gver"
+              sed -i -E "s/^([[:space:]]*)version = \"[0-9]+\.[0-9]+\.[0-9]+/\1version = \"${MA}.${MI}.$((PA + 1))/" build.gradle.kts
+              bumped="build.gradle.kts"
+            fi
+          else
+            echo "Found ${#cfgs[@]} bump-my-version configs — multi-component repo with per-component gates; skipping bump."
+          fi
+
+          branch="template-sync/skills-content"
+          git checkout -B "$branch"
+          git add .claude/skills
+          [ -n "$bumped" ] && git add "$bumped"
+          git commit -m "chore: sync shared skills from devcontainer-sandbox template"
+          # Plain --force: this branch is bot-owned and always regenerated from
+          # the default branch, so a shallow-checkout runner with no
+          # remote-tracking ref for it is expected, not a real race.
+          git push --force -u origin "$branch"
+
           body_file="$(mktemp)"
           {
-            echo 'Automated by `.github/workflows/template-sync.yml`.'
+            echo 'Automated, content-only sync of the shared `.claude/skills/` library from the'
+            echo '[devcontainer-sandbox](https://github.com/DavidWinterbottom-2/devcontainer-sandbox)'
+            echo 'template. No agents, hooks, workflow files or settings are touched here — see'
+            echo '`template-sync/skills` for those.'
             echo
-            echo 'A shared asset vendored from the devcontainer-sandbox template'
-            echo '(https://github.com/DavidWinterbottom-2/devcontainer-sandbox) has drifted'
-            echo 'from its canonical copy. This PR refreshes it. The synced set is declared'
-            echo 'in `.github/template-sync.json` (`shared_skills` + `shared_docs`); the'
-            echo 'repo'\''s own skills are left untouched.'
-            echo
-            echo 'The patch version is bumped automatically so the §2 version-bumped check passes.'
-            echo
-            echo 'Review the diff and merge to pick up the update.'
+            echo 'This PR requests GitHub auto-merge (squash) on open. It completes without a'
+            echo 'manual click only if this repo lists the sync token as a required-review bypass'
+            echo 'actor; otherwise it merges as soon as someone approves it, same as any PR.'
+            [ -n "$bumped" ] && echo && echo "The patch version in \`$bumped\` was bumped automatically so the §2 version-bumped check passes."
           } > "$body_file"
 
-          gh pr create \
-            --base "$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)" \
-            --head "$branch" \
-            --title "Sync shared skills and standards from the devcontainer-sandbox template" \
-            --body-file "$body_file"
+          if pr_number="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number')" && [ -n "$pr_number" ]; then
+            gh pr edit "$pr_number" --body-file "$body_file"
+          else
+            gh pr create --base "$default_branch" --head "$branch" \
+              --title "chore: sync shared skills (content-only, auto-merge)" \
+              --label template-sync --body-file "$body_file"
+            pr_number="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number')"
+          fi
+
+          gh pr merge --squash --auto "$pr_number" || \
+            echo "::warning::Could not request auto-merge on PR #$pr_number — enable it under Settings → General → Allow auto-merge if this is unexpected."
+
+      - name: Control track — sync agents/hooks/workflow files, open PR for manual review
+        env:
+          GH_TOKEN: ${{ secrets.TEMPLATE_SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+          tpl=.template-src
+          default_branch="$(gh repo view --json defaultBranchRef --jq .defaultBranchRef.name)"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Reset to a clean copy of the default branch — discards the content
+          # track's local branch switch/working-tree state above, but not
+          # .template-src (untracked, so a tracked-file checkout leaves it alone).
+          git fetch origin "$default_branch"
+          git checkout -B template-sync/skills "origin/$default_branch"
+
+          mkdir -p .github/workflows
+          # The AI-workflow agents (architect + the independent critics) ride
+          # along: the agents directory is template-owned — every agent in the
+          # template's .claude/agents/ is shared by definition, and agents
+          # retired from the template are deleted here too (--delete), so a
+          # renamed or removed role doesn't linger downstream.
+          if [ -d "$tpl/.claude/agents" ]; then
+            mkdir -p .claude/agents
+            rsync -a --delete "$tpl/.claude/agents/" .claude/agents/
+          fi
+          if [ -f "$tpl/.claude/hooks/require-tester.sh" ]; then
+            mkdir -p .claude/hooks
+            cp -p "$tpl/.claude/hooks/require-tester.sh" .claude/hooks/require-tester.sh
+            # Ensure the hook's PostToolUse registration exists in this repo's
+            # .claude/settings.json. Settings stay repo-local — nothing else in
+            # the file is touched — but this one entry is the pipeline's
+            # enforcement point, so the sync merges it in if it's missing.
+            [ -f .claude/settings.json ] || echo '{}' > .claude/settings.json
+            if ! jq -e '.hooks.PostToolUse[]?.hooks[]? | select(.command | contains("require-tester.sh"))' .claude/settings.json >/dev/null; then
+              jq '.hooks.PostToolUse = ((.hooks.PostToolUse // []) + [{"matcher":"Write|Edit|MultiEdit","hooks":[{"type":"command","command":"$CLAUDE_PROJECT_DIR/.claude/hooks/require-tester.sh"}]}])' \
+                .claude/settings.json > .claude/settings.json.tmp
+              mv .claude/settings.json.tmp .claude/settings.json
+            fi
+          fi
+          # The claude-tracker hooks: report.sh/report.py post each session's
+          # events to the tracker board (they do nothing unless the cloud
+          # environment sets CLAUDE_EVENTS_URL). Their registrations are merged
+          # into .claude/settings.json per event, skipping any event that
+          # already runs a report.sh, so a repo's own hooks stay as they are.
+          # Canonical copy: claude-tracker's hooks/ — change them there, then
+          # copy them here.
+          if [ -f "$tpl/.claude/hooks/report.sh" ]; then
+            mkdir -p .claude/hooks
+            cp -p "$tpl/.claude/hooks/report.sh" "$tpl/.claude/hooks/report.py" .claude/hooks/
+            # An event whose value isn't a list is left alone (with a warning)
+            # rather than failing the sync. The file is only rewritten when a
+            # registration was added, so formatting alone never opens a PR.
+            # (.claude/settings.local.json isn't checked: it isn't committed.)
+            [ -f .claude/settings.json ] || echo '{}' > .claude/settings.json
+            jq --slurpfile reg "$tpl/.claude/hooks/tracker-hooks.json" '
+              if (.hooks // {} | type) != "object" then . else
+              reduce ($reg[0].hooks | to_entries[]) as $e (.;
+                (.hooks[$e.key] // []) as $cur
+                | if ($cur | type) != "array" then .
+                  elif any($cur[]?; (.hooks? // []) | arrays | any(.[]?;
+                         (.command? | strings | test("(^|/)report\\.sh\\b"))))
+                  then .
+                  else .hooks[$e.key] = ($cur + $e.value)
+                  end) end' .claude/settings.json > .claude/settings.json.tmp
+            for k in $(jq -r '.hooks // {} | objects | to_entries[] | select(.value | type != "array") | .key' .claude/settings.json); do
+              echo "::warning::.claude/settings.json hooks.$k is not a list; tracker hook not registered for it"
+            done
+            if [ "$(jq -S . .claude/settings.json)" != "$(jq -S . .claude/settings.json.tmp)" ]; then
+              mv .claude/settings.json.tmp .claude/settings.json
+            else
+              rm .claude/settings.json.tmp
+            fi
+          fi
+          cp "$tpl/.github/workflows/template-sync.yml" .github/workflows/template-sync.yml
+          # The label-gated Claude auto-work workflow rides along with the sync so
+          # every templated repo can have a Hermes PR worked by Claude on demand.
+          cp "$tpl/.github/workflows/claude.yml" .github/workflows/claude.yml
+          # The shared PR template (§3 Summary / Changes / Validation) rides along too
+          # so GitHub pre-fills every web-UI PR — and the create-pr skill fills the same
+          # file — with one house style across all repos.
+          cp "$tpl/.github/pull_request_template.md" .github/pull_request_template.md
+          # The shared labels (the claude-tracker board's stage:<name> labels, plus
+          # `claude` and `template-sync`) ride along with the workflow that creates
+          # them from the list on merge, using the default token.
+          cp "$tpl/.github/labels.json" .github/labels.json
+          cp "$tpl/.github/workflows/labels.yml" .github/workflows/labels.yml
+          rm -rf "$tpl"
+
+          control_paths=".claude/agents .claude/hooks .claude/settings.json .github/workflows/template-sync.yml .github/workflows/claude.yml .github/pull_request_template.md .github/labels.json .github/workflows/labels.yml"
+          if [ -z "$(git status --porcelain $control_paths)" ]; then
+            echo "Agents/hooks/workflow files already match the template — nothing to sync in the control track."
+            exit 0
+          fi
+
+          # Same single-whole-repo-version-source bump as the content track —
+          # see its comment for the full rationale. Independent of that track's
+          # own bump: each PR carries its own +1 relative to the default branch.
+          bumped=""
+          mapfile -t cfgs < <(grep -rlE '^\[(tool\.)?bumpversion\]' \
+                  --include=pyproject.toml --include=.bumpversion.toml \
+                  --include=.bumpversion.cfg --include=setup.cfg . 2>/dev/null || true)
+          if [ "${#cfgs[@]}" -eq 1 ]; then
+            dir=$(dirname "${cfgs[0]}")
+            python3 -m pip install --quiet --upgrade bump-my-version
+            ( cd "$dir" && bump-my-version bump patch --allow-dirty --no-commit --no-tag )
+            bumped="$dir"
+          elif [ "${#cfgs[@]}" -eq 0 ]; then
+            if [ -f gradle.properties ] && grep -qE '^version=[0-9]+\.[0-9]+\.[0-9]+' gradle.properties; then
+              gver=$(grep -m1 -E '^version=' gradle.properties | sed -E 's/^version=([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+              IFS=. read -r MA MI PA <<< "$gver"
+              sed -i -E "s/^version=[0-9].*/version=${MA}.${MI}.$((PA + 1))/" gradle.properties
+              bumped="gradle.properties"
+            elif [ -f build.gradle.kts ] && grep -qE '^[[:space:]]*version = "[0-9]+\.[0-9]+\.[0-9]+' build.gradle.kts; then
+              gver=$(grep -m1 -E '^[[:space:]]*version = "[0-9]+\.[0-9]+\.[0-9]+' build.gradle.kts | sed -E 's/.*version = "([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+              IFS=. read -r MA MI PA <<< "$gver"
+              sed -i -E "s/^([[:space:]]*)version = \"[0-9]+\.[0-9]+\.[0-9]+/\1version = \"${MA}.${MI}.$((PA + 1))/" build.gradle.kts
+              bumped="build.gradle.kts"
+            fi
+          else
+            echo "Found ${#cfgs[@]} bump-my-version configs — multi-component repo with per-component gates; skipping bump."
+          fi
+
+          git add $control_paths
+          [ -n "$bumped" ] && git add "$bumped"
+          git commit -m "chore: sync skills from devcontainer-sandbox template"
+          git push --force -u origin template-sync/skills
+
+          body_file="$(mktemp)"
+          {
+            echo 'Automated sync of the AI-workflow agents (`.claude/agents/` +'
+            echo '`.claude/hooks/require-tester.sh` + its `settings.json` registration), the'
+            echo 'claude-tracker hooks (`.claude/hooks/report.sh` + `report.py` + their registrations), the'
+            echo 'shared `.github/pull_request_template.md` (§3 Summary / Changes / Validation),'
+            echo 'the shared labels (`.github/labels.json` + `labels.yml`), and this workflow from the'
+            echo '[devcontainer-sandbox](https://github.com/DavidWinterbottom-2/devcontainer-sandbox)'
+            echo 'template. This runs with real permissions in Claude Code sessions and CI, so —'
+            echo 'unlike the skills-only `template-sync/skills-content` PR — it always waits for'
+            echo 'manual review. Merge to adopt.'
+            [ -n "$bumped" ] && echo && echo "The patch version in \`$bumped\` was bumped automatically so the §2 version-bumped check passes."
+          } > "$body_file"
+
+          if pr_number="$(gh pr list --head template-sync/skills --state open --json number --jq '.[0].number')" && [ -n "$pr_number" ]; then
+            gh pr edit "$pr_number" --body-file "$body_file"
+          else
+            gh pr create --base "$default_branch" --head template-sync/skills \
+              --title "chore: sync skills from devcontainer-sandbox template" \
+              --label template-sync --body-file "$body_file"
+          fi
