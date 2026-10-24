@@ -597,11 +597,15 @@ ruff check --select=E9,F63,F7,F82 .
 ```
 
 - **CI** ([`ci.yml`](.github/workflows/ci.yml)) runs the hard-error lint subset
-  and the test suite on every PR and push to `main`.
+  on every PR and push to `main`, and the unit and browser test suites on every
+  push to `main` and every ready-for-review PR that changes code. Docs-only and
+  draft PRs skip the two test jobs (they report as passing), and a new push
+  cancels the PR's still-running run.
 - **Version** lives in [`pyproject.toml`](pyproject.toml) and is the single
   source of truth. Bump with `bump-my-version bump patch|minor|major` — never by
   hand. [`version-check.yml`](.github/workflows/version-check.yml) fails a PR
-  that doesn't bump it.
+  that doesn't bump it, except a docs-only one as classified by
+  [`.github/scripts/code-changed.sh`](.github/scripts/code-changed.sh).
 - **Standards** — [`standards/REPO-STANDARDS.md`](standards/REPO-STANDARDS.md) is
   a vendored copy of the canonical doc in the template. Don't hand-edit it;
   refresh it with `scripts/sync-from-template.sh`.
@@ -645,7 +649,7 @@ change an entry in `AGENTS.md` and re-run it; CI fails if the two drift.
 
 Two things are enforced by CI rather than described in prose, so an agent finds
 out either way: [`version-check.yml`](.github/workflows/version-check.yml) fails
-any PR that doesn't bump the version, and [`ci.yml`](.github/workflows/ci.yml)
+any code PR that doesn't bump the version, and [`ci.yml`](.github/workflows/ci.yml)
 runs the lint and test gates.
 
 **Why the layering.** Anything in `AGENTS.md` is re-read on every request of

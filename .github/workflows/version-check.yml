@@ -1,22 +1,30 @@
 name: version-check
 
 # REPO-STANDARDS §2: every PR must bump the version in its single source of
-# truth (pyproject.toml). Fires on every PR, unconditionally (no path filters),
-# and fails if the version matches the base branch. Over-bumping a docs/CI-only
-# PR is harmless (images deploy by SHA); a fragile "what shipped" path filter is
-# not. Bump with `bump-my-version bump patch|minor|major`.
+# truth (pyproject.toml). Fires on every PR (no path filters) and fails if the
+# version matches the base branch. Bump with `bump-my-version bump patch|minor|major`.
+# Exception: a docs-only PR (as classified by .github/scripts/code-changed.sh,
+# the same script that gates CI) ships nothing, so it needs no bump.
 
 on: pull_request
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   version-bumped:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Fail if the version wasn't bumped
         run: |
+          if .github/scripts/code-changed.sh | grep -qx 'code=false'; then
+            echo "docs-only change: no bump required" && exit 0
+          fi
           base="origin/${{ github.base_ref }}"
           git fetch origin "${{ github.base_ref }}" --depth=1
           new=$(grep -m1 '^version' pyproject.toml | tr -d ' "' | cut -d= -f2)
