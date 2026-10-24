@@ -623,9 +623,10 @@ so it's worth knowing which is which before editing any of them.
 
 **Start at [`AGENTS.md`](AGENTS.md).** Every other agent-facing file is reached
 from there, and it doesn't point back at this file or `SETUP.md`, which are
-written for people. The only entry that refers back up the tree is the vendored
-`standards/REPO-STANDARDS.md`, and that's not navigation — it names `AGENTS.md`
-and `CLAUDE.md` because it specifies what every repo in the estate must contain.
+written for people. The vendored entries (`.claude/skills/` and
+`standards/REPO-STANDARDS.md`) aren't scanned: they're rewritten upstream on
+every template sync, and what they name — `AGENTS.md`, `CLAUDE.md` — is what
+every repo in the estate must contain, not navigation in this one.
 
 The table below is **generated** from `AGENTS.md`'s "Where the detail lives"
 table by [`scripts/generate-docs-map.py`](scripts/generate-docs-map.py), which
@@ -638,9 +639,9 @@ change an entry in `AGENTS.md` and re-run it; CI fails if the two drift.
 | [`AGENTS.md`](AGENTS.md) | The entry point. Project description, the exact commands, the rules that apply to every change, and pointers to everything below. Kept deliberately short — it is re-read on every request. | `.claude/skills`, `.env.example`, `.github/pull_request_template.md`, `.github/template-sync.json`, `CLAUDE.md`, `docs/architecture.md`, `docs/code-style.md`, `e2e/README.md`, `standards/REPO-STANDARDS.md` |
 | [`docs/architecture.md`](docs/architecture.md) | How the app is organised and why it behaves as it does | — (leaf) |
 | [`docs/code-style.md`](docs/code-style.md) | Python style, logging, error handling | `docs/architecture.md`, `e2e/README.md` |
-| [`standards/REPO-STANDARDS.md`](standards/REPO-STANDARDS.md) | Repo standards — branching, testing, versioning, design system | `.env.example`, `.github/pull_request_template.md`, `AGENTS.md`, `CLAUDE.md` |
+| [`standards/REPO-STANDARDS.md`](standards/REPO-STANDARDS.md) | Repo standards — branching, testing, versioning, design system | — (vendored; not scanned) |
 | [`CLAUDE.md`](CLAUDE.md) | Devcontainer, shared skills, template sync | `.claude/skills`, `.github/template-sync.json`, `standards/REPO-STANDARDS.md` |
-| [`.claude/skills/`](.claude/skills/) | Task procedures — opening a PR, code review, TDD — loaded on demand. **Vendored** | `.env.example`, `.github/pull_request_template.md`, `AGENTS.md`, `CLAUDE.md`, `standards/REPO-STANDARDS.md` |
+| [`.claude/skills/`](.claude/skills/) | Task procedures — opening a PR, code review, TDD — loaded on demand. **Vendored** | — (vendored; not scanned) |
 | [`.github/pull_request_template.md`](.github/pull_request_template.md) | The shape every PR description takes | — (leaf) |
 | [`.github/template-sync.json`](.github/template-sync.json) | Which skills and docs are vendored, and from where | — (leaf) |
 | [`.env.example`](.env.example) | Every configuration variable, and what it does | — (leaf) |
