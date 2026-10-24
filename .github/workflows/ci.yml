@@ -78,7 +78,13 @@ jobs:
 
   test:
     needs: changes
-    if: needs.changes.outputs.code == 'true' && !github.event.pull_request.draft
+    # Skip only on a definite docs-only answer or a draft. `!cancelled()` lets
+    # this run when `changes` itself failed (its output is then empty, not
+    # 'false'), so a broken classifier runs the tests instead of skipping them,
+    # and a skip, which reports as passing, can't let a code change through.
+    if: >-
+      !cancelled() && needs.changes.outputs.code != 'false' &&
+      !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -114,7 +120,13 @@ jobs:
   # don't, and because a UI failure should be legible as a UI failure.
   e2e:
     needs: changes
-    if: needs.changes.outputs.code == 'true' && !github.event.pull_request.draft
+    # Skip only on a definite docs-only answer or a draft. `!cancelled()` lets
+    # this run when `changes` itself failed (its output is then empty, not
+    # 'false'), so a broken classifier runs the tests instead of skipping them,
+    # and a skip, which reports as passing, can't let a code change through.
+    if: >-
+      !cancelled() && needs.changes.outputs.code != 'false' &&
+      !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
