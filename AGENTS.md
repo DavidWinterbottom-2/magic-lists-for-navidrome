@@ -31,9 +31,16 @@ The app serves on **4545**. Work in the devcontainer (`.devcontainer/`).
 - **Branch off `main`; merge via PR.** Never push to `main`. Name the branch
   `claude/<skill>/<description>`, `claude/<description>-<id>`,
   `bugfix/<description>`, or `<type>/<description>` for human work.
-- **Bump the version** with `bump-my-version` — CI fails a PR that doesn't,
-  including docs- and CI-only ones. Over-bumping is harmless; images deploy by
-  SHA.
+- **Bump the version** with `bump-my-version` — CI fails a PR that doesn't.
+  **Exception:** a docs-only PR needs no bump. Docs-only means every changed file
+  is `*.md`, under `docs/`, `openspec/` or `.claude/`, or `LICENSE`; anything
+  under `.github/`, `backend/`, `frontend/` or `recipes/` (what the Dockerfile
+  ships) is always code. The rule lives in
+  [`.github/scripts/code-changed.sh`](.github/scripts/code-changed.sh); keep the
+  two in step. CI-only PRs change `.github/`, so they are bumped.
+- **CI skips the slow jobs on docs-only and draft PRs.** `test` and `e2e` report
+  as skipped (passing) there; open work in progress as a draft and mark it
+  ready to run everything. A new push cancels the PR's still-running CI.
 - **One logical change per PR**, described as Summary / Changes / Validation —
   the sections in [`.github/pull_request_template.md`](.github/pull_request_template.md).
 - **Never hand-edit vendored files** — `standards/`, `.claude/skills/`, and the
