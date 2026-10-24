@@ -20,6 +20,28 @@ source of truth and never hand-edit the vendored copies:
 describes private infrastructure. Read it from the template when this app is
 wired into docker-infra as a public service; don't copy it in.
 
+## CI and versioning
+
+The version lives in `pyproject.toml`; bump it with
+`bump-my-version bump patch|minor|major`, never by hand. `version-check.yml`
+(check `version-bumped`) fails a PR that doesn't bump it, **unless the PR is
+docs-only**.
+
+Docs-only is decided by one script,
+[`.github/scripts/code-changed.sh`](.github/scripts/code-changed.sh), which both
+`version-check.yml` and `ci.yml` call. It allowlists docs: `*.md`, `docs/`,
+`openspec/`, `.claude/` and `LICENSE`. Everything else is code, including
+`.github/**`, and anything under `backend/`, `frontend/` or `recipes/` (the
+folders the Dockerfile copies into the image), even a `.md` there. If you add a
+doc that the app or a test reads, or a Dockerfile `COPY` that reaches a docs
+path, update the script.
+
+In `ci.yml`, `lint` always runs (its docs-map check is what reads the docs);
+`test` and `e2e` are skipped on docs-only and draft PRs by a job-level `if`, so
+the skipped checks report as passing. Marking a draft ready runs them. A new push
+cancels a PR's still-running CI. Pushes to `main` always run the full suite and
+`publish.yml`, and are never cancelled by CI's concurrency group.
+
 ## Dev environment
 
 Templated off `devcontainer-sandbox` (REPO-STANDARDS §7). The container adopts

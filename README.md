@@ -200,8 +200,9 @@ LAN exactly as it always did.
 - **Devcontainer** templated off `devcontainer-sandbox` (§7), plus the shared
   Claude Code skills library and an automated **template sync** workflow that
   opens a PR when a vendored skill or standards doc drifts.
-- **CI** (lint + tests on every PR), a **per-PR version gate** with
-  `pyproject.toml` as the version source (§2), and an **MIT LICENSE** (§6).
+- **CI** (lint on every PR, tests on every code PR), a **per-PR version gate**
+  with `pyproject.toml` as the version source and a docs-only exemption (§2),
+  and an **MIT LICENSE** (§6).
 
 ---
 
@@ -597,11 +598,13 @@ ruff check --select=E9,F63,F7,F82 .
 ```
 
 - **CI** ([`ci.yml`](.github/workflows/ci.yml)) runs the hard-error lint subset
-  and the test suite on every PR and push to `main`.
+  on every PR, and the unit and browser tests on every push to `main` and every
+  non-draft PR that changes code. Docs-only and draft PRs skip the tests (see
+  "CI and versioning" in [`CLAUDE.md`](CLAUDE.md)).
 - **Version** lives in [`pyproject.toml`](pyproject.toml) and is the single
   source of truth. Bump with `bump-my-version bump patch|minor|major` — never by
   hand. [`version-check.yml`](.github/workflows/version-check.yml) fails a PR
-  that doesn't bump it.
+  that doesn't bump it, unless the PR is docs-only.
 - **Standards** — [`standards/REPO-STANDARDS.md`](standards/REPO-STANDARDS.md) is
   a vendored copy of the canonical doc in the template. Don't hand-edit it;
   refresh it with `scripts/sync-from-template.sh`.

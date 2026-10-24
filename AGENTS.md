@@ -32,8 +32,8 @@ The app serves on **4545**. Work in the devcontainer (`.devcontainer/`).
   `claude/<skill>/<description>`, `claude/<description>-<id>`,
   `bugfix/<description>`, or `<type>/<description>` for human work.
 - **Bump the version** with `bump-my-version` — CI fails a PR that doesn't,
-  including docs- and CI-only ones. Over-bumping is harmless; images deploy by
-  SHA.
+  CI-only ones included. A docs-only PR (see "CI and versioning" in
+  [`CLAUDE.md`](CLAUDE.md)) needs no bump.
 - **One logical change per PR**, described as Summary / Changes / Validation —
   the sections in [`.github/pull_request_template.md`](.github/pull_request_template.md).
 - **Never hand-edit vendored files** — `standards/`, `.claude/skills/`, and the
