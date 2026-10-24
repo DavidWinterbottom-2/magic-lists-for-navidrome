@@ -61,6 +61,15 @@ EXEMPT_FILES = {
 # directories are skipped wholesale (see scan below), which covers .claude/,
 # .github/ and the various tool caches that ship their own README.
 EXEMPT_DIRS = ("standards/", "docs/reviews/", "node_modules/", "venv/", "htmlcov/", "test-results/")
+# Entries whose files are copied from the devcontainer-sandbox template and
+# overwritten on every sync (template-sync.yml for the skills,
+# scripts/sync-from-template.sh for the standards). Their "Points to" is not
+# derived from their contents: an upstream edit to a link inside them would
+# otherwise make this map stale, and fail lint, on a PR that changed no doc of
+# this repo's. What they name is generic to every repo in the estate anyway, so
+# it says nothing about how this repo's docs are layered.
+VENDORED = (".claude/skills", "standards/REPO-STANDARDS.md")
+VENDORED_CELL = "— (vendored; not scanned)"
 
 TABLE_ROW = re.compile(r"^\|(?P<purpose>[^|]+)\|(?P<target>[^|]+)\|\s*$")
 LINK = re.compile(r"\]\((?P<path>[^)#]+)(?:#[^)]*)?\)")
@@ -163,8 +172,11 @@ def render():
 
     out = ["| Document | What it directs | Points to |", "| --- | --- | --- |"]
     for path, purpose, target in rows:
-        refs = references_of(path, canonical)
-        cell = ", ".join(f"`{r}`" for r in refs) if refs else "— (leaf)"
+        if normalise(path) in VENDORED:
+            cell = VENDORED_CELL
+        else:
+            refs = references_of(path, canonical)
+            cell = ", ".join(f"`{r}`" for r in refs) if refs else "— (leaf)"
         out.append(f"| {target} | {purpose} | {cell} |")
     return "\n".join(out)
 
