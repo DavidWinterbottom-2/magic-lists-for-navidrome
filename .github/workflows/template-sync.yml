@@ -47,12 +47,32 @@ on:
     # churned out near-duplicate drift PRs faster than they could be reviewed.
     - cron: "0 22 * * 0"
   workflow_dispatch:
+  # Re-sync when a sync PR merges: the control track bumps the patch version,
+  # so a control PR cut before another version change merged conflicts on the
+  # version file. Re-running regenerates it from the new default branch with a
+  # fresh bump. (The content track no longer bumps.) The re-run is a no-op for
+  # a track with no drift, so it can't loop.
+  pull_request:
+    types: [closed]
 
 jobs:
   sync-skills:
     runs-on: ubuntu-latest
     # No-op in the template repo itself; only downstream copies sync.
-    if: github.repository != 'DavidWinterbottom-2/devcontainer-sandbox'
+    # On pull_request, only after a sync PR (template-sync/*) actually merged.
+    if: >-
+      github.repository != 'DavidWinterbottom-2/devcontainer-sandbox' &&
+      (github.event_name != 'pull_request' ||
+       (github.event.pull_request.merged &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        startsWith(github.event.pull_request.head.ref, 'template-sync/')))
+    # One sync at a time: a merge-triggered re-run waits for an in-flight
+    # scheduled/dispatched run instead of racing it on the same branches.
+    # Job-level (not workflow-level) so skipped runs for unrelated PRs never
+    # enter the group and displace a pending sync.
+    concurrency:
+      group: template-sync
+      cancel-in-progress: false
     permissions:
       contents: write
       pull-requests: write
@@ -68,9 +88,12 @@ jobs:
 
       # Check out with the PAT: checkout saves its token as the git credential,
       # and only the PAT may push .github/workflows/* files.
+      # On pull_request the default ref is the PR's merge ref; sync from the
+      # default branch instead, as the scheduled run does.
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.TEMPLATE_SYNC_TOKEN }}
+          ref: ${{ github.event.repository.default_branch }}
 
       - name: Fetch the template (private → needs a read token)
         uses: actions/checkout@v4
@@ -92,7 +115,20 @@ jobs:
 
           mkdir -p .claude/skills
           manifest=$tpl/.claude/skills/.hermes-skills
-          if [ -f "$manifest" ]; then
+          curated=.github/skills-sync.json
+          if [ -f "$curated" ] && jq -e '.shared_skills | arrays' "$curated" >/dev/null; then
+            # A repo that curates its own set (a config-only repo such as
+            # azure-infra) lists it in .github/skills-sync.json `shared_skills`;
+            # that list replaces the manifest here. Agents and hooks are
+            # unaffected — the control track below syncs those regardless.
+            # `if`, not an `&&` chain: a name missing from the template would
+            # otherwise end the loop non-zero and fail the step under pipefail.
+            jq -r '.shared_skills[]' "$curated" | while read -r s; do
+              if [ -n "$s" ] && [ -d "$tpl/.claude/skills/$s" ]; then
+                rsync -a "$tpl/.claude/skills/$s/" ".claude/skills/$s/"
+              fi
+            done
+          elif [ -f "$manifest" ]; then
             # Only propagate the skills the manifest marks as shared; the rest stay
             # dev-environment-only in the template. Never delete repo-local skills.
             cp "$manifest" .claude/skills/.hermes-skills
@@ -110,40 +146,14 @@ jobs:
             exit 0
           fi
 
-          # Bump the single whole-repo version source, same rule as the control
-          # track below (see its comment for the full rationale): a skills-only
-          # sync touches no application code, but an unconditional §2 check still
-          # needs *a* bump to pass. Multi-component repos are skipped — bumping
-          # an arbitrary component for a repo-wide skills sync would be spurious.
-          bumped=""
-          mapfile -t cfgs < <(grep -rlE '^\[(tool\.)?bumpversion\]' \
-                  --include=pyproject.toml --include=.bumpversion.toml \
-                  --include=.bumpversion.cfg --include=setup.cfg . 2>/dev/null || true)
-          if [ "${#cfgs[@]}" -eq 1 ]; then
-            dir=$(dirname "${cfgs[0]}")
-            python3 -m pip install --quiet --upgrade bump-my-version
-            ( cd "$dir" && bump-my-version bump patch --allow-dirty --no-commit --no-tag )
-            bumped="$dir"
-          elif [ "${#cfgs[@]}" -eq 0 ]; then
-            if [ -f gradle.properties ] && grep -qE '^version=[0-9]+\.[0-9]+\.[0-9]+' gradle.properties; then
-              gver=$(grep -m1 -E '^version=' gradle.properties | sed -E 's/^version=([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-              IFS=. read -r MA MI PA <<< "$gver"
-              sed -i -E "s/^version=[0-9].*/version=${MA}.${MI}.$((PA + 1))/" gradle.properties
-              bumped="gradle.properties"
-            elif [ -f build.gradle.kts ] && grep -qE '^[[:space:]]*version = "[0-9]+\.[0-9]+\.[0-9]+' build.gradle.kts; then
-              gver=$(grep -m1 -E '^[[:space:]]*version = "[0-9]+\.[0-9]+\.[0-9]+' build.gradle.kts | sed -E 's/.*version = "([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-              IFS=. read -r MA MI PA <<< "$gver"
-              sed -i -E "s/^([[:space:]]*)version = \"[0-9]+\.[0-9]+\.[0-9]+/\1version = \"${MA}.${MI}.$((PA + 1))/" build.gradle.kts
-              bumped="build.gradle.kts"
-            fi
-          else
-            echo "Found ${#cfgs[@]} bump-my-version configs — multi-component repo with per-component gates; skipping bump."
-          fi
+          # No version bump: a skills-only sync changes only .claude/**, which the
+          # §2 docs-only exemption (version-bump-check skill) treats as docs. A repo
+          # that hasn't adopted the exemption yet fails version-bumped on this PR —
+          # deliberately: run the version-bump-check skill there to adopt it.
 
           branch="template-sync/skills-content"
           git checkout -B "$branch"
           git add .claude/skills
-          [ -n "$bumped" ] && git add "$bumped"
           git commit -m "chore: sync shared skills from devcontainer-sandbox template"
           # Plain --force: this branch is bot-owned and always regenerated from
           # the default branch, so a shallow-checkout runner with no
@@ -160,7 +170,11 @@ jobs:
             echo 'This PR requests GitHub auto-merge (squash) on open. It completes without a'
             echo 'manual click only if this repo lists the sync token as a required-review bypass'
             echo 'actor; otherwise it merges as soon as someone approves it, same as any PR.'
-            [ -n "$bumped" ] && echo && echo "The patch version in \`$bumped\` was bumped automatically so the §2 version-bumped check passes."
+            echo
+            echo 'No version bump: skills are docs under the §2 docs-only exemption. If `version-bumped`'
+            echo 'fails here, this repo has not adopted the exemption yet: run the `version-bump-check`'
+            echo 'skill in this repo (it adds `.github/scripts/code-changed.sh`); once that merges, click'
+            echo '"Update branch" here (or wait for the next sync) so the check runs against the new base.'
           } > "$body_file"
 
           if pr_number="$(gh pr list --head "$branch" --state open --json number --jq '.[0].number')" && [ -n "$pr_number" ]; then
@@ -270,9 +284,10 @@ jobs:
             exit 0
           fi
 
-          # Same single-whole-repo-version-source bump as the content track —
-          # see its comment for the full rationale. Independent of that track's
-          # own bump: each PR carries its own +1 relative to the default branch.
+          # Bump the single whole-repo version source: this track edits .github/**,
+          # which is code even under the §2 docs-only exemption, so it needs *a*
+          # bump to pass. Multi-component repos are skipped — bumping an arbitrary
+          # component for a repo-wide sync would be spurious.
           bumped=""
           mapfile -t cfgs < <(grep -rlE '^\[(tool\.)?bumpversion\]' \
                   --include=pyproject.toml --include=.bumpversion.toml \
@@ -299,7 +314,10 @@ jobs:
           fi
 
           git add $control_paths
-          [ -n "$bumped" ] && git add "$bumped"
+          # -u: stage only tracked files the bump rewrote. A plain `git add "$bumped"`
+          # is `git add .` for a root config and sweeps in the .template-src checkout
+          # as a submodule gitlink.
+          [ -n "$bumped" ] && git add -u -- "$bumped"
           git commit -m "chore: sync skills from devcontainer-sandbox template"
           git push --force -u origin template-sync/skills
 
