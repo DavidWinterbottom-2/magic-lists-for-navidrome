@@ -169,6 +169,8 @@ tmp_rovodev_validate_docker.py
 !.claude/settings.json
 !.claude/hooks/
 !.claude/skills/
+!.claude/agents/
+!.claude/tracker-off
 .claude/settings.local.json
 wipe_playlists.py
 debug_payloads

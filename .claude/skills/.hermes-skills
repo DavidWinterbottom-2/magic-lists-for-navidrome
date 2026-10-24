@@ -1,0 +1,40 @@
+# Skills Hermes manages and propagates to service repos (the shared/org library).
+#
+# Only the skills listed here are:
+#   - loaded by Hermes as its library (dedup, LLM context, propose-target), and
+#   - copied into service repos by .github/workflows/template-sync.yml.
+#
+# Every other skill in this folder stays dev-environment-only: Claude Code sees it
+# in the devcontainer, but Hermes ignores it and the sync doesn't push it to repos.
+# One skill name (its directory) per line; '#' comments and blank lines ignored.
+# Hermes appends a name here when it proposes a new shared skill.
+
+# --- org standards ---
+repo-standards-audit
+new-service-checklist
+version-bump-check
+devcontainer-from-sandbox
+design-system-sync
+record-review
+promote-to-service
+issue-stages
+
+# --- general engineering skills wanted in every service repo ---
+tdd
+code-review
+diagnosing-bugs
+resolving-merge-conflicts
+setup-pre-commit
+git-guardrails-claude-code
+codebase-design
+domain-modeling
+create-pr
+grilling
+
+# --- borderline: interactive / slash-command-only (uncomment to share) ---
+# improve-codebase-architecture
+# wayfinder
+# grill-with-docs
+# decision-mapping
+# handoff
+# prototype

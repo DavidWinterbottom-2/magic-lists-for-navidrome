@@ -1,0 +1,49 @@
+name: claude
+
+# Label-gated Claude Code auto-work. Claude picks up a pull request (typically a
+# Hermes draft) and implements/refines it — but only when a maintainer opts that
+# PR in, so the local model's noisy proposals don't each spend Claude budget.
+#
+# Triggers:
+#   - apply the `claude` label to a PR  → Claude works the PR from its description
+#   - comment `@claude ...` on an issue/PR → Claude responds to the instruction
+#
+# Auth: uses a Claude Pro/Max subscription token (no separate API bill). Generate
+# it locally with `claude setup-token` and add it as the repo (or account) secret
+# CLAUDE_CODE_OAUTH_TOKEN. Each run also draws on your Max usage budget, so keep
+# it label-gated. (Swap to ANTHROPIC_API_KEY for pay-as-you-go API billing.)
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  claude:
+    # @claude mention in a comment, or the `claude` label applied to a PR.
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request' && github.event.label.name == 'claude')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Comment triggers respond to @claude (no prompt). The label trigger has
+          # no instruction text, so give Claude the task explicitly.
+          prompt: ${{ github.event_name == 'pull_request' && 'A maintainer applied the `claude` label to this pull request. Treat the PR description as the task — it is often a draft opened by the Hermes standards agent. Complete and refine the proposed change so it is correct, focused, and consistent with the repository (follow CLAUDE.md / AGENTS.md and the repo standards). Fix any failing CI, then push commits to this PR branch. Do not merge.' || '' }}
+          claude_args: "--max-turns 15"

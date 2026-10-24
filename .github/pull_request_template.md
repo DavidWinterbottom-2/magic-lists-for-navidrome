@@ -1,22 +1,22 @@
 <!--
-REPO-STANDARDS §3: PR descriptions follow Summary / Changes / Validation.
-One logical change per PR. Bump the version (`bump-my-version bump <part>`) —
-the version-check workflow fails a PR that doesn't, docs-only ones included.
+PR template for winterbottom.xyz repos (REPO-STANDARDS §3).
+
+Fill in Summary / Changes / Validation below. Keep to one logical change per PR and
+keep the diff reviewable. Delete these HTML comments before submitting.
 -->
 
 ## Summary
 
-<!-- What changed and why. One or two sentences; lead with the problem. -->
+<!-- What changed and why, in a sentence or two. Link the issue / PRD if there is one. -->
 
 ## Changes
 
-<!-- The files or areas touched, and what each change does. -->
+<!-- The files / areas touched, as a short bulleted list. -->
 
 -
 
 ## Validation
 
-<!-- How this was verified: tests run, `docker compose config`, a /health check,
-     screenshots for UI changes. "Not tested" is a valid answer — say so. -->
+<!-- How you verified it: tests run, `docker compose config`, health checks, manual steps. -->
 
 -
