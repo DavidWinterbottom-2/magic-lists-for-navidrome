@@ -7,7 +7,13 @@ keep the diff reviewable. Delete these HTML comments before submitting.
 
 ## Summary
 
-<!-- What changed and why, in a sentence or two. Link the issue / PRD if there is one. -->
+<!-- What changed and why, in a sentence or two. -->
+
+<!--
+Name the issue this PR is for (REPO-STANDARDS §3; the issue-linked check enforces it):
+`Closes #N`, or `Part of owner/repo#N` when the PR doesn't finish it.
+For a typo-sized change with no issue, write the line `No issue: trivial` instead.
+-->
 
 ## Changes
 

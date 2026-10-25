@@ -524,7 +524,7 @@ def post(url: str, token: str, payload: dict) -> None:
 def main() -> int:
     env = dict(os.environ)
     url, token = env.get("CLAUDE_EVENTS_URL"), env.get("CLAUDE_EVENTS_TOKEN", "")
-    if not url:
+    if not url or not token:
         return 0
     try:
         hook = json.loads(sys.stdin.read() or "{}")
