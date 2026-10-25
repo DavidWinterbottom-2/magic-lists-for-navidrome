@@ -39,7 +39,7 @@ Stage the logical change, commit with a clear message (what and why, imperative 
 push the branch:
 
 ```bash
-git switch -c claude/<description>-<id>   # if not already on a feature branch
+git switch -c claude/<issue>-<description>   # if not already on a feature branch (§1; no issue: claude/<description>-<id>)
 git add -A && git commit -m "<subject>"
 git push -u origin HEAD
 ```
@@ -58,8 +58,10 @@ repo somehow has none, use the canonical **Summary / Changes / Validation** shap
 
 Fill each section from the actual diff; delete the guidance HTML comments as you go:
 
-- **Summary** — what changed and *why*, in a sentence or two. Link the issue / PRD if there is
-  one (`Closes #123`).
+- **Summary** — what changed and *why*, in a sentence or two, and the issue it is for:
+  `Closes #123`, or `Part of owner/repo#123` when the PR doesn't finish it. With no issue, the
+  line `No issue: trivial` — but **ask the user first**; what counts as trivial is agreed with
+  them, not decided alone. The `issue-linked` check fails a PR with neither (§3).
 - **Changes** — the files / areas touched, as a short bulleted list a reviewer can scan.
 - **Validation** — how you verified it: the test command you ran and its result,
   `docker compose config` for a service, health checks, any manual steps. "Not tested" is a
