@@ -144,10 +144,24 @@ jobs:
         run: .github/scripts/code-changed.sh | tee -a "$GITHUB_OUTPUT"
   test:
     needs: changes
-    if: needs.changes.outputs.code == 'true' && !github.event.pull_request.draft
+    # !cancelled(): a plain `if:` carries an implicit success(), so a failed
+    # `changes` would skip this job, and a skip reports as passing.
+    if: >-
+      !cancelled() && github.event_name == 'pull_request' &&
+      needs.changes.outputs.code != 'false' && !github.event.pull_request.draft
 ```
 
 - Gate unit tests, e2e, image builds — anything over about a minute. Keep fast lint ungated.
+- **Fail safe if `changes` itself fails.** Write the gate as
+  `!cancelled() && … && needs.changes.outputs.code != 'false'`, never
+  `needs.changes.outputs.code == 'true'`. A plain `if:` carries an implicit
+  `success()`, so a failed `changes` job skips every gated job, and a skipped
+  job reports as passing: a code PR merges untested. With `!cancelled()` and
+  `!= 'false'` (a failed job's outputs are empty), only a definite docs-only
+  answer or a draft skips. Keep `github.event_name == 'pull_request'` in the
+  gate if those jobs ran on PRs only, or `!cancelled()` starts them on every
+  push and tag too. If `changes` also runs on push and answers `code=true`
+  there, drop it. Seen in DavidWinterbottom-2/magic-lists-for-navidrome#50.
 - **Use a job-level `if`, not workflow `paths`.** A required check that a
   workflow-level `paths`/`paths-ignore` filter leaves out stays "Expected" forever
   and blocks the merge. A *skipped* job reports as passing.
