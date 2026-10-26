@@ -19,8 +19,8 @@ name: template-sync
 #     Bypass list). Without that bypass it behaves exactly like GitHub
 #     auto-merge always has: merges the moment someone approves.
 #   CONTROL  — .claude/agents/**, .claude/hooks/**, .claude/settings.json,
-#     this workflow file, claude.yml, labels.yml + labels.json, and the PR
-#     template. This executes with real permissions inside Claude Code sessions or CI, so it always
+#     this workflow file, claude.yml, labels.yml + labels.json, the PR
+#     template, and the issue-linked PR check. This executes with real permissions inside Claude Code sessions or CI, so it always
 #     stays a normal, manually-reviewed PR on `template-sync/skills` (the
 #     original branch name, so an already-open PR there keeps working).
 #
@@ -58,6 +58,7 @@ on:
 jobs:
   sync-skills:
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # normally under a minute
     # No-op in the template repo itself; only downstream copies sync.
     # On pull_request, only after a sync PR (template-sync/*) actually merged.
     if: >-
@@ -231,9 +232,10 @@ jobs:
           fi
           # The claude-tracker hooks: report.sh/report.py post each session's
           # events to the tracker board (they do nothing unless the cloud
-          # environment sets CLAUDE_EVENTS_URL). Their registrations are merged
-          # into .claude/settings.json per event, skipping any event that
-          # already runs a report.sh, so a repo's own hooks stay as they are.
+          # environment sets CLAUDE_EVENTS_URL and CLAUDE_EVENTS_TOKEN). Their
+          # registrations are merged into .claude/settings.json per event,
+          # skipping any event that already runs a report.sh, so a repo's own
+          # hooks stay as they are.
           # Canonical copy: claude-tracker's hooks/ — change them there, then
           # copy them here.
           if [ -f "$tpl/.claude/hooks/report.sh" ]; then
@@ -271,6 +273,9 @@ jobs:
           # so GitHub pre-fills every web-UI PR — and the create-pr skill fills the same
           # file — with one house style across all repos.
           cp "$tpl/.github/pull_request_template.md" .github/pull_request_template.md
+          # The §3 issue-linked check rides along with it: it fails a PR whose
+          # description neither names its issue nor says `No issue: trivial`.
+          cp "$tpl/.github/workflows/issue-linked.yml" .github/workflows/issue-linked.yml
           # The shared labels (the claude-tracker board's stage:<name> labels, plus
           # `claude` and `template-sync`) ride along with the workflow that creates
           # them from the list on merge, using the default token.
@@ -278,7 +283,7 @@ jobs:
           cp "$tpl/.github/workflows/labels.yml" .github/workflows/labels.yml
           rm -rf "$tpl"
 
-          control_paths=".claude/agents .claude/hooks .claude/settings.json .github/workflows/template-sync.yml .github/workflows/claude.yml .github/pull_request_template.md .github/labels.json .github/workflows/labels.yml"
+          control_paths=".claude/agents .claude/hooks .claude/settings.json .github/workflows/template-sync.yml .github/workflows/claude.yml .github/pull_request_template.md .github/workflows/issue-linked.yml .github/labels.json .github/workflows/labels.yml"
           if [ -z "$(git status --porcelain $control_paths)" ]; then
             echo "Agents/hooks/workflow files already match the template — nothing to sync in the control track."
             exit 0
@@ -326,7 +331,8 @@ jobs:
             echo 'Automated sync of the AI-workflow agents (`.claude/agents/` +'
             echo '`.claude/hooks/require-tester.sh` + its `settings.json` registration), the'
             echo 'claude-tracker hooks (`.claude/hooks/report.sh` + `report.py` + their registrations), the'
-            echo 'shared `.github/pull_request_template.md` (§3 Summary / Changes / Validation),'
+            echo 'shared `.github/pull_request_template.md` (§3 Summary / Changes / Validation) and its'
+            echo '`issue-linked` check (a PR names its issue or says `No issue: trivial`),'
             echo 'the shared labels (`.github/labels.json` + `labels.yml`), and this workflow from the'
             echo '[devcontainer-sandbox](https://github.com/DavidWinterbottom-2/devcontainer-sandbox)'
             echo 'template. This runs with real permissions in Claude Code sessions and CI, so —'
