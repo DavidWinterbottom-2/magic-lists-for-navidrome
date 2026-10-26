@@ -37,7 +37,10 @@ Under `<host>/services/<name>/`, mirror an existing service (e.g. `ynab-ingestor
 - `README.md` + `.env.example`.
 
 If the repo is a deployed image, ensure it has a `publish.yml` (GHCR build on push to
-`main`) in its **own** repo.
+`main`) in its **own** repo, plus the §4 **`image`** PR check: build the image, run it, and
+fail unless `/health` reports the declared version (the template's `ships_image` job, or
+`asset-overview`'s). Once `image` has reported on a PR, add it to `main`'s required checks
+(`configure-branch-protection`, "Adding a check").
 
 ## 2. Register it (this is what keeps CI green)
 

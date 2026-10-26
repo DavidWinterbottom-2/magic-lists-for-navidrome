@@ -32,6 +32,25 @@ section. Gather these signals first:
 - lint/format tool configured in-repo (`[tool.ruff]`, `.eslintrc*`, `.prettierrc*`, …) **and**
   a CI job that runs lint + format-check on every PR? (§10)
 - version source of truth + change history? (§2)
+- **first-party deployed service?** It is one if docker-infra deploys an image built from
+  this repo (`ghcr.io/davidwinterbottom-2/<name>` in a `*/services/*/docker-compose.yml`), or
+  the repo's own workflows push to `ghcr.io`. If so (§4, §1):
+  - does CI have an **`image`** job on `pull_request` that builds the image, **runs** it and
+    fails unless `/health` reports the version in the repo's version source? Flag
+    **standards-drift** when there's no such job, or when one only builds (no `docker run`,
+    no `/health`, no version comparison). Suggested action: port `asset-overview`'s `image`
+    job (or the template's `ships_image` job).
+  - is it gated like `test` (the `changes` job + `code-changed.sh`, skipped on docs-only and
+    draft PRs)? Flag a job that runs unconditionally as a minor finding (wasted minutes, §2).
+  - is **`image` a required status check** on `main`? Read it from
+    `gh api repos/<owner>/<repo>/rules/branches/main` (rulesets) or
+    `.../branches/main/protection/required_status_checks` (classic). Flag a repo with the job
+    whose protection doesn't require `image`; the fix is the `configure-branch-protection`
+    skill's "Adding a check" step, run by the repo owner (session tokens get 403 on
+    protection; report the check as unverified rather than passing). Never suggest requiring
+    `image` in a repo with no `image` job: it would hang every PR.
+- `main` protected and requiring a PR? (§1) There is no Free-plan exception anymore: an
+  unprotected `main`, or a `.hermes-ignore` `§1 Branch protection` opt-out, is a finding.
 
 Report findings as a table: **severity · section · finding · suggested action**. Be
 conservative — only flag what the repo contents justify. Distinguish:

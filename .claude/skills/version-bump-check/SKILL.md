@@ -218,11 +218,12 @@ jobs:
   code", checked against each Dockerfile. A mistake errs towards running CI and
   requiring a bump, so a real change can't merge un-bumped because of a missing
   path rule.
-- **Template-sync PRs.** A skills-only (content-track) sync changes only
-  `.claude/**`, so it is docs-only, and `template-sync.yml` never bumps it. In a
-  repo that hasn't adopted the exemption yet, `version-bumped` fails on that sync
-  PR. That's deliberate: run this skill in the repo to adopt it. Control-track
-  syncs change `.github/`, so they are code and are always bumped.
+- **Template-sync PRs.** A sync that changes only `.claude/**` is docs-only, and
+  template-sync never bumps it. In a repo that hasn't adopted the exemption yet,
+  `version-bumped` fails on that sync PR. That's deliberate: run this skill in the
+  repo to adopt it. A sync that changes `.github/` is code, so template-sync bumps
+  the repo's single whole-repo version source; a repo with none (or several) gets
+  no bump and must adopt one, or the sync PR fails `version-bumped`.
 - **Opting out.** A repo that deliberately doesn't version (a throwaway spike, or
   a pure `:latest` service) can silence Hermes's finding with a `.hermes-ignore`
   line `§2 Versioning`.
