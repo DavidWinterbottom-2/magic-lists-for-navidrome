@@ -1,0 +1,45 @@
+name: issue-linked
+
+# REPO-STANDARDS §3: every PR names its issue, or says it is trivial. Fails a PR
+# whose description has neither
+#   - a link to an issue: `Closes #N`, `Fixes #N`, `Resolves #N`, `Part of #N`
+#     (each also as `owner/repo#N` or a full issue URL), or
+#   - the line `No issue: trivial`.
+# HTML comments are stripped first, so the PR template's own guidance text never
+# satisfies the check. Template-sync PRs (head branch template-sync/*) and bot
+# PRs are exempt: they are automated and have no issue.
+#
+# Template-owned: rides along with template-sync, so edit it in
+# devcontainer-sandbox, not downstream. Editing the PR description re-runs it.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+jobs:
+  issue-linked:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    if: >-
+      !startsWith(github.head_ref, 'template-sync/') &&
+      github.event.pull_request.user.type != 'Bot'
+    steps:
+      - name: Check the PR description names an issue or says it is trivial
+        env:
+          # Via env, never inlined into the script: the body is untrusted text.
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          text="$(printf '%s' "$BODY" | perl -0pe 's/<!--.*?-->//gs')"
+          repo='[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+'
+          ref="(${repo})?#[0-9]+|https://github\\.com/${repo}/issues/[0-9]+"
+          link="\\b(close[sd]?|fix(e[sd])?|resolve[sd]?|part of)\\b:?\\s+(${ref})"
+          if printf '%s' "$text" | grep -qiP "$link"; then
+            echo "PR names its issue."
+          elif printf '%s' "$text" | grep -qiP '^\s*No issue: trivial\s*$'; then
+            echo "PR is marked trivial (no issue)."
+          else
+            echo "::error::The PR description must name its issue (Closes #N / Part of owner/repo#N) or contain the line 'No issue: trivial' (REPO-STANDARDS §3)."
+            exit 1
+          fi
