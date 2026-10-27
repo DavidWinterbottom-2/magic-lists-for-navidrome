@@ -150,8 +150,8 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - name: Install Chromium
-        run: python -m playwright install --with-deps chromium
-        timeout-minutes: 5  # its apt step has hung for 8+ min elsewhere; fail fast instead
+        run: python -m playwright install chromium
+        timeout-minutes: 5  # browser only (no --with-deps): the image has its libraries; apt timed out on a slow mirror
 
       - name: Browser end-to-end tests
         run: python -m pytest e2e/ -q --browser chromium --tracing retain-on-failure
