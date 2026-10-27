@@ -2,9 +2,9 @@ name: labels
 
 # Creates (or updates) the shared labels listed in .github/labels.json in this
 # repo: the claude-tracker board's `stage:<name>` labels (claude-tracker
-# decision 13), plus the `claude` and `template-sync` labels the other shared
-# workflows apply. Template-owned: both files ride along with template-sync, so
-# edit them in devcontainer-sandbox, not downstream.
+# decision 13), plus the `template-sync` label the sync workflow applies.
+# Template-owned: both files ride along with template-sync, so edit them in
+# devcontainer-sandbox, not downstream.
 #
 # Runs with the default GITHUB_TOKEN (issues: write covers labels), so it needs
 # no PAT. `--force` updates a label's colour and description; labels are never
