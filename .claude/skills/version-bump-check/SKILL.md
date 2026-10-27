@@ -23,7 +23,7 @@ file, which is code, so without the exemption a docs PR still runs the full suit
 
 Do this as **one focused PR** on a new branch, in a fresh session, not one that is
 mid-PR. Don't edit workflows that `template-sync.yml` copies from the template
-(`claude.yml`, `labels.yml`, `template-sync.yml`). They are overwritten, so change
+(`issue-linked.yml`, `labels.yml`, `template-sync.yml`). They are overwritten, so change
 them in devcontainer-sandbox.
 
 ## Pick the stack-appropriate tool
@@ -228,8 +228,8 @@ jobs:
   a pure `:latest` service) can silence Hermes's finding with a `.hermes-ignore`
   line `§2 Versioning`.
 - **Shared budget.** The Actions budget is account-wide. Before blaming one repo's
-  CI, check Billing → Usage grouped by repository; long-running jobs (e.g. Claude
-  Code runs in `claude.yml`) can dominate.
+  CI, check Billing → Usage grouped by repository; long-running jobs (e.g. image builds or
+  Playwright suites) can dominate.
 - This skill is the human/Claude-run counterpart to Hermes's
   `No version-bump check in CI` finding. Reference implementation:
   DavidWinterbottom-2/asset-overview#58.

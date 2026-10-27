@@ -13,6 +13,7 @@
 repo-standards-audit
 new-service-checklist
 version-bump-check
+configure-branch-protection
 devcontainer-from-sandbox
 design-system-sync
 record-review
