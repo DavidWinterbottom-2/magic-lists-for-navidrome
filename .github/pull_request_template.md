@@ -11,7 +11,8 @@ keep the diff reviewable. Delete these HTML comments before submitting.
 
 <!--
 Name the issue this PR is for (REPO-STANDARDS §3; the issue-linked check enforces it):
-`Closes #N`, or `Part of owner/repo#N` when the PR doesn't finish it.
+`Part of #N` while the issue has steps left after merge (deploy, archive);
+`Closes #N` on the PR that finishes it. Another repo's issue: `owner/repo#N`.
 For a typo-sized change with no issue, write the line `No issue: trivial` instead.
 -->
 
