@@ -2,8 +2,8 @@
 name: version-bump-check
 description: >-
   Add (or retrofit) a per-PR version-bump check to a repo — a CI job that fails
-  unless the component's version (its single source of truth) was bumped,
-  except on docs-only PRs — and the matching CI gating that skips heavy jobs
+  unless the component's version (its single source of truth) is strictly
+  greater, by semver, than the base branch's, except on docs-only PRs — and the matching CI gating that skips heavy jobs
   on docs-only and draft PRs to save Actions minutes. Use when a repo has a
   declared version but no CI enforcement of a bump (REPO-STANDARDS §2), when
   setting up versioning for a new library/app, or when a private repo's
@@ -15,7 +15,9 @@ description: >-
 REPO-STANDARDS §2 requires that **every PR that changes what ships bumps the
 component's version** in its single source of truth, using the right tool for the
 stack, and that **CI fails the PR if it wasn't bumped**. **Docs-only PRs are
-exempt.** Pure `:latest`-deployed services (versioned by image SHA) are exempt.
+exempt.** Pure `:latest`-deployed services (versioned by image SHA) are exempt,
+but `issue-stages` stage 7's deploy gates need a declared version, so a deployed
+first-party service should declare one.
 
 The exemption and the CI gating below belong together. Private repos pay per
 job-minute (each job rounds up to a whole minute). A forced bump edits the version
@@ -84,9 +86,19 @@ echo "code=$code"
 
 ## 2. The version check
 
-`.github/workflows/version-check.yml` compares the version source against the PR's
-base and fails if it is unchanged, unless the diff is docs-only. Example for a
-Python `pyproject.toml` (swap the file and parse for your stack):
+`.github/workflows/version-check.yml` fails a code PR unless its version is
+**strictly greater, by semver, than the version the base branch declares at its
+current tip**. Docs-only PRs are exempt. "Changed" isn't enough: two parallel PRs
+can both bump 1.4.2 to 1.4.3, or one can land lower than `main` already is, and a
+deploy would then go backwards (#176).
+
+The comparison is `.github/scripts/version-gt.sh A B`: exit 0 if A > B, 1 if
+A ≤ B, 2 (naming the value) if either isn't plain `MAJOR.MINOR.PATCH`. No `v`
+prefix, no pre-release or build suffix, no leading zeros. It is dependency-free
+bash; `sort -V` isn't semver. Copy it verbatim from devcontainer-sandbox's
+`template/.github/scripts/version-gt.sh`, where `scripts/test-version-gt.sh`
+tests it. Never write your own comparison. Example for a Python `pyproject.toml`
+(swap the file and parse for your stack):
 
 ```yaml
 name: version-check
@@ -101,20 +113,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
-      - name: Fail if the version wasn't bumped
+      - name: Fail unless the version is greater than the base's
+        env:
+          BASE: ${{ github.base_ref }}
         run: |
           if .github/scripts/code-changed.sh | grep -qx 'code=false'; then
             echo "docs-only change: no bump required" && exit 0
           fi
-          base="origin/${{ github.base_ref }}"
-          git fetch origin "${{ github.base_ref }}" --depth=1
+          base="origin/$BASE"
+          git fetch origin "$BASE" --depth=1
           new=$(grep -m1 '^version' pyproject.toml | tr -d ' "' | cut -d= -f2)
           old=$(git show "$base:pyproject.toml" | grep -m1 '^version' | tr -d ' "' | cut -d= -f2)
-          echo "old=$old new=$new"
-          if [ "$old" = "$new" ]; then
-            echo "::error::version not bumped ($new). Bump it with your stack's tool." && exit 1
+          rc=0; bash .github/scripts/version-gt.sh "$new" "$old" || rc=$?
+          # Values come from the PR's own files: log them with anything outside
+          # [0-9A-Za-z.+-] shown as '?', so one can't emit a workflow command.
+          show_new=${new//[^0-9A-Za-z.+-]/?}; show_old=${old//[^0-9A-Za-z.+-]/?}
+          echo "base=$show_old pr=$show_new"
+          if [ "$rc" = 1 ]; then
+            echo "::error::version $show_new must be greater than $show_old on $BASE. Bump it with your stack's tool (after merging $BASE in)." && exit 1
+          elif [ "$rc" != 0 ]; then
+            echo "::error::can't compare versions (pr=$show_new, base=$show_old): both must be plain MAJOR.MINOR.PATCH." && exit 1
           fi
 ```
+
+This is the same step the copier template renders into `ci.yml`'s
+`version-bumped` job; keep the two in step.
+
+- **It depends on §1's up-to-date-branch rule.** The job fetches the base's tip
+  when it runs, but a PR whose last run was green before another PR merged the
+  same version would still merge. Branch protection's "require branches to be up
+  to date" forces the PR to merge `main` in, which reruns this check and catches
+  the collision. This skill doesn't enforce that rule; a repo without it
+  (REPO-STANDARDS §1, the `configure-branch-protection` skill) is exposed to
+  parallel-PR collisions, so say so in the PR.
+- **Adopting it is breaking.** Once merged, a PR whose version equals or trails
+  `main` fails. Open PRs need `main` merged in and a fresh bump.
+- **A version outside `X.Y.Z`** (`1.4.3-rc.1`, `v1.4.3`) fails the check with its
+  value named. A repo that needs pre-releases needs its own issue first.
 
 For JS, use `jq -r .version package.json`; for Rust, parse `Cargo.toml`. In a
 multi-component repo, a component needs a bump only if its own code changed, and
@@ -195,6 +230,8 @@ jobs:
 ## Validate before pushing
 
 - Run `actionlint` on every changed workflow.
+- Run the version step against a scratch base/PR pair for equal, lower, greater
+  and `1.9.0`→`1.10.0`, and show fail, fail, pass, pass.
 - Run `code-changed.sh` against simulated PR merge commits and show the output for:
   - docs-only;
   - code + docs;
@@ -225,8 +262,8 @@ jobs:
   the repo's single whole-repo version source; a repo with none (or several) gets
   no bump and must adopt one, or the sync PR fails `version-bumped`.
 - **Opting out.** A repo that deliberately doesn't version (a throwaway spike, or
-  a pure `:latest` service) can silence Hermes's finding with a `.hermes-ignore`
-  line `§2 Versioning`.
+  a pure `:latest` service; a deployed one then can't pass stage 7's gates) can
+  silence Hermes's finding with a `.hermes-ignore` line `§2 Versioning`.
 - **Shared budget.** The Actions budget is account-wide. Before blaming one repo's
   CI, check Billing → Usage grouped by repository; long-running jobs (e.g. image builds or
   Playwright suites) can dominate.
