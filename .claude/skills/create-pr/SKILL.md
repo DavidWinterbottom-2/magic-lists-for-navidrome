@@ -59,7 +59,8 @@ repo somehow has none, use the canonical **Summary / Changes / Validation** shap
 Fill each section from the actual diff; delete the guidance HTML comments as you go:
 
 - **Summary** — what changed and *why*, in a sentence or two, and the issue it is for:
-  `Closes #123`, or `Part of owner/repo#123` when the PR doesn't finish it. With no issue, the
+  `Part of #123` while the issue has steps left after merge (deploy, archive), and
+  `Closes #123` only on the PR that finishes it (another repo's: `owner/repo#123`). If unsure, use `Part of`. With no issue, the
   line `No issue: trivial` — but **ask the user first**; what counts as trivial is agreed with
   them, not decided alone. The `issue-linked` check fails a PR with neither (§3).
 - **Changes** — the files / areas touched, as a short bulleted list a reviewer can scan.
