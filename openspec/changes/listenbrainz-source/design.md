@@ -26,3 +26,9 @@ Task 0 verifies A1–A4 with `probe.sh`; client code is written against recorded
 ## Risks
 Probe contradicts A3/A4 → drop similar artists to a follow-up PR (Radio stays model-only); loved/top tracks
 and the Last.fm removal still ship before 12-01.
+
+## Agreed at spec (2026-11-22, David)
+1. The orchestrator's Pi bridge runs `probe.sh` and pastes redacted output on #65 (task 0.1). If it hasn't by 2026-11-25, group 3 (similar artists) moves to a follow-up.
+2. No MusicBrainz name-search fallback in v1 (D3).
+3. One PR; group 3 droppable at the 11-25 decision point.
+4. D5 (no caching of error/204 empties), D6 (`LISTENING_HISTORY_FALLBACK`, "Listening History Favourites") and version 0.7.0 with no new `CHANGELOG.md` (PR description carries the notes) accepted as written.
