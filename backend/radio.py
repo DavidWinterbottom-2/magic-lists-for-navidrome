@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote_plus
 
 from .errors import describe_exception
-from .lastfm_client import normalise_name
+from .name_matching import normalise_name
 
 logger = logging.getLogger("scheduler")
 

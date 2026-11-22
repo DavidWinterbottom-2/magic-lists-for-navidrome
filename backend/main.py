@@ -53,7 +53,8 @@ from .radio import (
     lidarr_add_url, promote_seed_first
 )
 from .track_scoring import filter_tracks_for_this_is_playlist, mark_starred_loved
-from .lastfm_client import LastfmClient, mark_loved
+from .lastfm_client import LastfmClient
+from .name_matching import mark_loved
 from .lidarr_client import LidarrClient
 # SYSTEM CHECK FEATURE - START
 from .services.health_check_service import HealthCheckService

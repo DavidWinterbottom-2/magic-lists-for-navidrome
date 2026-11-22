@@ -3,7 +3,7 @@
 - [ ] 0.2 **Decision point 2026-11-25:** if A3 or A4 is refuted or the probe is not run, drop group 3 to a follow-up issue and ship the rest.
 
 ## 1. Client and matching (tests first)
-- [ ] 1.1 `name_matching.py` (moved helpers); update imports. Verify: existing folding tests pass unchanged.
+- [x] 1.1 `name_matching.py` (moved helpers); update imports. Verify: existing folding tests pass unchanged.
 - [ ] 1.2 `ListenBrainzClient`: parse helpers + `loved_track_keys`, `top_tracks`; 204/error/timeout → empty, errors not cached. Verify: fixture tests incl. 204, malformed, empty.
 
 ## 2. Loved boost and Re-Discover

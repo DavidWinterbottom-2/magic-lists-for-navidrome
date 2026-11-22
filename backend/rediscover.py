@@ -6,7 +6,7 @@ from collections import defaultdict, Counter
 import json
 import random
 from .recipe_manager import recipe_manager
-from .lastfm_client import normalise_name
+from .name_matching import normalise_name
 
 
 class RediscoverWeekly:
