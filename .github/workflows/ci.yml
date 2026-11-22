@@ -127,7 +127,9 @@ jobs:
     if: >-
       !cancelled() && needs.changes.outputs.code != 'false' &&
       !github.event.pull_request.draft
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest is Ubuntu 26.04, which Playwright 1.56 has no Chromium
+    # build for. Unpin once Playwright is bumped to a release that supports it.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
