@@ -23,8 +23,8 @@ def mark_starred_loved(tracks: List[Dict]) -> int:
     `score_tracks_by_user_engagement` awards +50 for `track['loved']`, but the
     candidate tracks only ever carry Navidrome's own favourite flag
     (`local_library_likes`, from the Subsonic `starred` field). Navidrome does not
-    sync that heart to Last.fm, so the listener's real favourites — including any
-    hearted from a client like Amperfy — live here, not in Last.fm's loved tracks.
+    sync that heart to ListenBrainz, so the listener's real favourites — including any
+    hearted from a client like Amperfy — live here, not in ListenBrainz's loved tracks.
     Map them onto `loved` so they actually count. Returns the number newly marked.
     """
     marked = 0

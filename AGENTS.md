@@ -58,7 +58,7 @@ before changing playlist generation.
 - Guarantees about a playlist are **enforced in code after curation**, never
   merely asked for in the prompt.
 - A thin library yields a **short, explained** playlist — never a padded one.
-- Optional integrations (AI, Last.fm, Lidarr) **degrade**; they never fail a
+- Optional integrations (AI, ListenBrainz, Lidarr) **degrade**; they never fail a
   request.
 - Curation prompts are **versioned files plus a registry** — never edited in
   place.

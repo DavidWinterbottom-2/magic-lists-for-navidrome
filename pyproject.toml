@@ -1,6 +1,6 @@
 [project]
 name = "magic-lists-for-navidrome"
-version = "0.6.10"
+version = "0.7.0"
 description = "Navidrome smart-playlist generator (FastAPI backend + web frontend)."
 requires-python = ">=3.11"
 
@@ -10,7 +10,7 @@ requires-python = ">=3.11"
 # this file exists as the version SSOT + bump-my-version config, not a build
 # target, so it deliberately declares no [build-system].
 [tool.bumpversion]
-current_version = "0.6.10"
+current_version = "0.7.0"
 
 [[tool.bumpversion.files]]
 filename = "pyproject.toml"
@@ -62,7 +62,7 @@ branch = false
 include = [
     "backend/radio.py",
     "backend/track_scoring.py",
-    "backend/lastfm_client.py",
+    "backend/listenbrainz_client.py",
     "backend/recipe_manager.py",
     "backend/ai_response.py",
     "backend/database.py",

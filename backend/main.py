@@ -872,8 +872,8 @@ async def create_radio_playlist(
         if filter_metadata['filtered']:
             scheduler_logger.info(f"🎯 Radio smart filtering: {filter_metadata['source_count']} → {filter_metadata['sent_count']} tracks")
 
-        # Ground album suggestions in real Last.fm similar artists the listener
-        # doesn't own (empty when Last.fm isn't configured — model falls back to
+        # Ground album suggestions in real ListenBrainz similar artists the listener
+        # doesn't own (empty when ListenBrainz isn't configured — model falls back to
         # its own knowledge, as before).
         album_artists = [
             artist["name"]

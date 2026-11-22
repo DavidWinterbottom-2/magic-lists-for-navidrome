@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Union, Optional
 from .errors import describe_exception
 
 # httpx defaults to a 5s timeout on everything, which is far too tight for
-# Navidrome's heavier endpoints — getSimilarSongs2 does Last.fm lookups and real
+# Navidrome's heavier endpoints — getSimilarSongs2 does external similarity lookups and real
 # database work, and the whole server slows down while a library scan is running
 # (i.e. exactly after you've added the albums you want a station to pick up).
 #
@@ -984,7 +984,7 @@ class NavidromeClient:
     async def get_similar_artists(self, artist_id: str, count: int = 20) -> List[Dict[str, Any]]:
         """Fetch artists similar to the given artist using the Subsonic getArtistInfo2 API
 
-        Similar-artist data is provided by Navidrome's external agents (e.g. Last.fm).
+        Similar-artist data is provided by Navidrome's external agents (e.g. its configured similarity agents).
         Only artists that exist in the local library carry a usable "id"; artists
         without an id are external suggestions and are skipped here.
 
@@ -1046,7 +1046,7 @@ class NavidromeClient:
     async def get_similar_songs(self, artist_id: str, count: int = 50, library_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """Fetch similar-style songs for a seed artist via Subsonic getSimilarSongs2.
 
-        getSimilarSongs2 returns a Last.fm-backed collection of songs drawn from
+        getSimilarSongs2 returns an agent-backed collection of songs drawn from
         the seed artist and similar artists — all resident in the local library —
         which makes it a one-call candidate pool for a "radio" station.
 

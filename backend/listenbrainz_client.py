@@ -1,7 +1,7 @@
 """
 ListenBrainz client (public reads, username only).
 
-Replaces the former Last.fm integration. Three signals are recovered from
+Three signals are recovered from
 ListenBrainz that Navidrome does not expose:
 
   * the listener's loved tracks   (feedback API, score=1)

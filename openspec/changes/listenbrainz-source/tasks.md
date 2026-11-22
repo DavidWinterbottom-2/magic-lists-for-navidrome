@@ -15,8 +15,8 @@
 - [x] 3.2 Radio uses it; `ai_client` prompt wording provider-neutral. Verify: `test_radio*` ported; ranking and out-of-library filter asserted.
 
 ## 4. Removal, health, docs, release
-- [ ] 4.1 Delete `lastfm_client.py`, `LASTFM_*`, Last.fm tests; ListenBrainz health check (never fails startup). Verify: `grep -ri lastfm` empty outside `docs/reviews/LOG.md`; health tests for all four states.
-- [ ] 4.2 `.env.example`, README, SETUP, docs/architecture.md, AGENTS.md. Verify: grep above.
+- [x] 4.1 Delete `lastfm_client.py`, `LASTFM_*`, Last.fm tests; ListenBrainz health check (never fails startup). Verify: `grep -ri lastfm` empty outside `docs/reviews/LOG.md`; health tests for all four states.
+- [x] 4.2 `.env.example`, README, SETUP, docs/architecture.md, AGENTS.md. Verify: grep above.
 - [ ] 4.3 Bump 0.7.0 in `pyproject.toml`; full test suite + coverage gate + CI green. Verify: `version-bumped` passes.
 - [ ] 4.4 Open docker-infra follow-up issue (`LISTENBRAINZ_USERNAME`, optional `LISTENBRAINZ_URL` in `magiclists/docker-compose.yml`) at stage:define, linking #65.
 

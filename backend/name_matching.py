@@ -2,7 +2,7 @@
 Provider-neutral name matching.
 
 Folds artist/title strings to comparable keys so tracks from an external
-listening-history source (ListenBrainz, formerly Last.fm) can be matched against
+listening-history source (ListenBrainz) can be matched against
 the local library despite tagging differences. Pure functions, no I/O.
 """
 

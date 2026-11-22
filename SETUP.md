@@ -97,7 +97,7 @@ startup, and you'll be redirected here if anything required is wrong. It tests:
 - **Navidrome artists API** — API access working
 - **AI provider** — configured and reachable
 - **Library configuration** — single vs multiple libraries
-- **Last.fm integration** — optional; reported but never fails the page
+- **ListenBrainz integration** — optional; reported but never fails the page
 
 Each failure comes with a specific suggestion. The same data is available as
 JSON at `/api/health-check`, and a plain liveness probe at `/health`.
@@ -140,20 +140,23 @@ Interactive docs at <http://localhost:4545/docs>, schema at `/openapi.json`.
 
 ## 4. Optional integrations
 
-### Last.fm
+### ListenBrainz
 
 Sharpens curation across the board: loved tracks get a scoring boost in every
-playlist type, Radio's album suggestions get grounded in the real
-similar-artist graph, and Re-Discover gains a fallback.
+playlist type, Radio's album suggestions get grounded in real similar-artist
+data, and Re-Discover gains a listening-history fallback.
 
 ```bash
-LASTFM_API_KEY=          # create one at https://www.last.fm/api/account/create
-LASTFM_USERNAME=         # your Last.fm handle, not your email
+LISTENBRAINZ_USERNAME=   # your ListenBrainz username, not your email
+# LISTENBRAINZ_URL=      # optional, self-hosted server; default https://api.listenbrainz.org
 ```
 
-Reading your loved and top tracks needs only these two — no login — provided
-Settings → Privacy → **"Hide recent listening information" is off**. Leave
-`LASTFM_API_KEY` empty to disable; everything degrades to Navidrome-only.
+Only public reads are used, so no token is needed. Leave `LISTENBRAINZ_USERNAME`
+empty to disable; everything degrades to Navidrome-only. Your loved and top tracks
+only exist on ListenBrainz once something scrobbles there: turn on ListenBrainz
+scrobbling in Navidrome and, if you want your old history, import it from
+a previous service on listenbrainz.org. Grounded Radio suggestions also need
+Navidrome to know the seed artist's MusicBrainz ID (tagged music with MBIDs).
 
 ### Lidarr
 
@@ -318,7 +321,7 @@ backups) in the working directory. `LOG_LEVEL=DEBUG` makes it verbose.
 
 Check the build note on the playlist. If the similar-songs lookup failed, the
 station was rebuilt from a reduced pool and will resemble the last one — a
-Navidrome/Last.fm recall problem, not a curation one.
+Navidrome similarity-recall problem, not a curation one.
 
 ### Radio stations come up short
 
