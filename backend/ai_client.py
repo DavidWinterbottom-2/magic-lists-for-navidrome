@@ -888,7 +888,7 @@ Return JSON: {{"track_ids": [indices], "reasoning": "summary"}}"""
 
             variety_note = f"\n\n{variety_context}" if variety_context else ""
 
-            # Ground album suggestions in Last.fm's similar-artist data when we have
+            # Ground album suggestions in ListenBrainz's similar-artist data when we have
             # it: these artists genuinely fit the seed and are confirmed absent from
             # the library, so the model picks a real album by them rather than
             # inventing an artist from memory.
@@ -897,7 +897,7 @@ Return JSON: {{"track_ids": [indices], "reasoning": "summary"}}"""
                 artist_list = ", ".join(preferred_album_artists)
                 album_note = (
                     f"\n\nFor album_suggestions, prefer these artists — similar to the seed "
-                    f"(per Last.fm) and confirmed NOT in the library: {artist_list}. "
+                    f"(per ListenBrainz) and confirmed NOT in the library: {artist_list}. "
                     f"Pick one real, well-known album by each artist you suggest; do not invent releases."
                 )
 

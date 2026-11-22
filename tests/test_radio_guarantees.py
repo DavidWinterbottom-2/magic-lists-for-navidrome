@@ -38,7 +38,8 @@ class ExplodingNav:
     """
 
     def __init__(self, fail=(), artist_tracks=None, similar=None,
-                 genre_tracks=None, artists=None, similar_songs=None):
+                 genre_tracks=None, artists=None, similar_songs=None, no_mbid=False):
+        self.no_mbid = no_mbid
         self.fail = set(fail)
         self.artist_tracks = artist_tracks or {}
         self.similar = similar or []
@@ -58,6 +59,10 @@ class ExplodingNav:
         self._maybe_fail("artist_tracks")
         return list(self.artist_tracks.get(artist_id, []))
 
+    async def get_artist_mbid(self, artist_id):
+        self._maybe_fail("mbid")
+        return None if self.no_mbid else "mbid-" + str(artist_id)
+
     async def get_similar_artists(self, artist_id, count=20):
         self._maybe_fail("similar_artists")
         return list(self.similar)
@@ -71,19 +76,19 @@ class ExplodingNav:
         return list(self.artists)
 
 
-class FailingLastfm:
+class FailingListenBrainz:
     enabled = True
 
-    async def similar_artists(self, artist_name, limit=40):
-        raise Exception("last.fm is down")
+    async def similar_artists(self, artist_mbid, limit=40):
+        raise Exception("listenbrainz is down")
 
 
-class StubLastfm:
+class StubListenBrainz:
     def __init__(self, similar, enabled=True):
         self.enabled = enabled
         self._similar = similar
 
-    async def similar_artists(self, artist_name, limit=40):
+    async def similar_artists(self, artist_mbid, limit=40):
         return list(self._similar)
 
 
@@ -224,30 +229,40 @@ class PoolDegradationTests(unittest.IsolatedAsyncioTestCase):
 
 
 class AlbumSuggestionSourceTests(unittest.IsolatedAsyncioTestCase):
-    """Suggestions are Last.fm's similar artists minus everything already owned."""
+    """Suggestions are ListenBrainz's similar artists minus everything already owned."""
 
     SEED = {"type": "artist", "id": "A1", "name": "Alpha", "artist_id": "A1", "artist_name": "Alpha"}
 
-    async def test_no_lastfm_means_no_grounded_suggestions(self):
-        processor = RadioProcessor(ExplodingNav(), lastfm_client=None)
+    async def test_no_listenbrainz_means_no_grounded_suggestions(self):
+        processor = RadioProcessor(ExplodingNav(), listenbrainz_client=None)
         self.assertEqual(await processor.similar_out_of_library_artists(self.SEED), [])
 
     async def test_a_disabled_client_is_skipped(self):
-        processor = RadioProcessor(ExplodingNav(), StubLastfm([{"name": "Beta"}], enabled=False))
+        processor = RadioProcessor(ExplodingNav(), StubListenBrainz([{"name": "Beta"}], enabled=False))
         self.assertEqual(await processor.similar_out_of_library_artists(self.SEED), [])
 
-    async def test_a_seed_with_no_artist_name_is_skipped(self):
-        processor = RadioProcessor(ExplodingNav(), StubLastfm([{"name": "Beta"}]))
+    async def test_a_seed_with_no_artist_id_is_skipped(self):
+        processor = RadioProcessor(ExplodingNav(), StubListenBrainz([{"name": "Beta"}]))
         self.assertEqual(await processor.similar_out_of_library_artists({"type": "artist"}), [])
 
-    async def test_a_lastfm_failure_degrades_and_warns(self):
-        processor = RadioProcessor(ExplodingNav(), FailingLastfm())
+    async def test_a_listenbrainz_failure_degrades_and_warns(self):
+        processor = RadioProcessor(ExplodingNav(), FailingListenBrainz())
 
         self.assertEqual(await processor.similar_out_of_library_artists(self.SEED), [])
         self.assertTrue(any("album-suggestion" in w for w in processor.pool_warnings))
 
+    async def test_a_seed_without_an_mbid_degrades_silently(self):
+        processor = RadioProcessor(ExplodingNav(no_mbid=True), StubListenBrainz([{"name": "Beta"}]))
+        self.assertEqual(await processor.similar_out_of_library_artists(self.SEED), [])
+        self.assertEqual(processor.pool_warnings, [])
+
+    async def test_an_mbid_lookup_failure_degrades_and_warns(self):
+        processor = RadioProcessor(ExplodingNav(fail=["mbid"]), StubListenBrainz([{"name": "Beta"}]))
+        self.assertEqual(await processor.similar_out_of_library_artists(self.SEED), [])
+        self.assertTrue(any("album-suggestion" in w for w in processor.pool_warnings))
+
     async def test_an_empty_similar_list_yields_nothing(self):
-        processor = RadioProcessor(ExplodingNav(), StubLastfm([]))
+        processor = RadioProcessor(ExplodingNav(), StubListenBrainz([]))
         self.assertEqual(await processor.similar_out_of_library_artists(self.SEED), [])
 
     async def test_a_failed_library_lookup_gives_up_rather_than_suggesting_owned_artists(self):
@@ -255,13 +270,13 @@ class AlbumSuggestionSourceTests(unittest.IsolatedAsyncioTestCase):
         # already owned, and suggesting an album the listener has is worse than
         # suggesting nothing.
         nav = ExplodingNav(fail=["artists"])
-        processor = RadioProcessor(nav, StubLastfm([{"name": "Beta", "match": "0.9"}]))
+        processor = RadioProcessor(nav, StubListenBrainz([{"name": "Beta", "match": "0.9"}]))
 
         self.assertEqual(await processor.similar_out_of_library_artists(self.SEED), [])
 
     async def test_the_limit_is_applied_to_the_gaps(self):
         similar = [{"name": f"Band {i}", "match": "0.5"} for i in range(10)]
-        processor = RadioProcessor(ExplodingNav(artists=[]), StubLastfm(similar))
+        processor = RadioProcessor(ExplodingNav(artists=[]), StubListenBrainz(similar))
 
         result = await processor.similar_out_of_library_artists(self.SEED, limit=3)
 

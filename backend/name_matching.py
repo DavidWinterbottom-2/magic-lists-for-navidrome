@@ -44,20 +44,26 @@ def normalise_name(name: Optional[str]) -> str:
     return _normalise(name)
 
 
-def mark_loved(tracks: List[Dict[str, Any]], loved_keys: Set[Tuple[str, str]]) -> int:
-    """Flag tracks whose (artist, title) is in the loved set. Returns the count.
+def mark_loved(
+    tracks: List[Dict[str, Any]],
+    loved_keys: Set[Tuple[str, str]],
+    loved_mbids: Optional[Set[str]] = None,
+) -> int:
+    """Flag loved tracks in place. Returns the number newly marked.
 
     Sets `track['loved'] = True`, the exact signal `score_tracks_by_user_engagement`
-    already rewards (+50) but which nothing else in the app populates.
+    already rewards (+50). A track matches by recording MBID when it carries one that
+    is in `loved_mbids`; otherwise by the folded (artist, title) key.
     """
-    if not loved_keys:
+    if not loved_keys and not loved_mbids:
         return 0
     marked = 0
     for track in tracks:
         if track.get("loved"):
             continue  # already loved (e.g. via a Navidrome star) — don't recount
-        key = loved_key(track.get("artist"), track.get("title"))
-        if key in loved_keys:
+        mbid = (track.get("mbid") or "").strip().lower()
+        if (loved_mbids and mbid and mbid in loved_mbids) or \
+                loved_key(track.get("artist"), track.get("title")) in loved_keys:
             track["loved"] = True
             marked += 1
     return marked

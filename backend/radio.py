@@ -323,11 +323,11 @@ def enforce_artist_cap(
 class RadioProcessor:
     """Resolves a radio seed and gathers similar-style candidate tracks."""
 
-    def __init__(self, nav_client, lastfm_client=None):
+    def __init__(self, nav_client, listenbrainz_client=None):
         self.nav_client = nav_client
-        # Optional Last.fm client. When present, its similar-artist graph grounds
+        # Optional ListenBrainz client. When present, its similar-artist graph grounds
         # the album suggestions in real data rather than the model's own guesses.
-        self.lastfm_client = lastfm_client
+        self.listenbrainz_client = listenbrainz_client
         # Recall failures that degraded the pool. Each step below is allowed to
         # fail so a station can still be built, but a station built from a
         # fallback is a materially worse station and the listener should be told
@@ -383,7 +383,7 @@ class RadioProcessor:
 
         Strategy (each step only runs while the pool is still thin, so a single
         good source short-circuits the rest):
-          1. Similar songs via Subsonic getSimilarSongs2 — a Last.fm-backed,
+          1. Similar songs via Subsonic getSimilarSongs2 — an external-agent-backed,
              library-resident pool of the seed artist + similar artists in one call.
           2. The seed artist's own tracks (guarantees the seed is represented).
           3. Backfill from similar artists' catalogues.
@@ -477,38 +477,42 @@ class RadioProcessor:
         library_ids: Optional[List[str]] = None,
         limit: int = 8
     ) -> List[Dict[str, str]]:
-        """Ranked, fitting artists the listener does NOT own, from Last.fm.
+        """Ranked, fitting artists the listener does NOT own, from ListenBrainz.
 
         Radio's album-suggestion feature exists to point at gaps in the library —
         "artists like the seed that you don't have yet". Left to itself the model
-        invents those names from memory; grounding them in Last.fm's similar-artist
+        invents those names from memory; grounding them in ListenBrainz's similar-artist
         graph (minus whatever is already in the library) makes the suggestions real
-        and genuinely absent. Returns the top `limit` by Last.fm similarity.
+        and genuinely absent. Returns the top `limit` by ListenBrainz similarity.
 
-        Returns [] when Last.fm isn't configured or any lookup fails — the curator
+        Returns [] when ListenBrainz isn't configured, the seed has no MBID or any lookup fails — the curator
         then falls back to suggesting albums from its own knowledge, as before.
         """
-        client = self.lastfm_client
+        client = self.listenbrainz_client
         if not client or not getattr(client, "enabled", False):
             return []
 
-        seed_artist = seed.get("artist_name")
-        if not seed_artist:
+        artist_id = seed.get("artist_id")
+        if not artist_id:
             return []
 
         try:
-            similar = await client.similar_artists(seed_artist)
+            artist_mbid = await self.nav_client.get_artist_mbid(artist_id)
+            if not artist_mbid:
+                logger.info("📻 Radio: seed artist has no MusicBrainz ID in Navidrome; skipping similar-artist grounding")
+                return []
+            similar = await client.similar_artists(artist_mbid)
         except Exception as e:
             reason = describe_exception(e)
-            logger.warning(f"⚠️ Radio: Last.fm similar-artist lookup failed: {reason}")
-            self.pool_warnings.append(f"The Last.fm album-suggestion lookup failed ({reason}).")
+            logger.warning(f"⚠️ Radio: ListenBrainz similar-artist lookup failed: {reason}")
+            self.pool_warnings.append(f"The ListenBrainz album-suggestion lookup failed ({reason}).")
             return []
 
         if not similar:
             return []
 
         # Fold every library artist name to the same match key, then keep only the
-        # Last.fm suggestions that don't collide — those are the genuine gaps.
+        # ListenBrainz suggestions that don't collide — those are the genuine gaps.
         try:
             library_artists = await self.nav_client.get_artists(library_ids)
         except Exception as e:
@@ -523,7 +527,7 @@ class RadioProcessor:
         ]
 
         logger.info(
-            f"📻 Radio: {len(out_of_library)} of {len(similar)} Last.fm similar artists "
+            f"📻 Radio: {len(out_of_library)} of {len(similar)} ListenBrainz similar artists "
             f"are outside the library (top {limit} used for album suggestions)"
         )
         return out_of_library[:limit]

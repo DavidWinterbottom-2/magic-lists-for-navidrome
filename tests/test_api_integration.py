@@ -42,8 +42,7 @@ def _configure_environment():
         "AUTH_DISABLED": "true",
         "ANALYTICS_SCRIPT_URL": "",
         "ANALYTICS_WEBSITE_ID": "",
-        "LASTFM_API_KEY": "",
-        "LASTFM_USERNAME": "",
+        "LISTENBRAINZ_USERNAME": "",
     })
     return tmp, stop_navidrome, stop_ai
 
@@ -64,7 +63,7 @@ class ApiTestCase(unittest.TestCase):
 
         main.navidrome_client = None
         main.ai_client = None
-        main.lastfm_client = None
+        main.listenbrainz_client = None
         main.db_manager = None
 
         cls.main = main

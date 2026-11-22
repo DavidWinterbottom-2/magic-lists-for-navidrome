@@ -447,6 +447,7 @@ class NavidromeClient:
                         "id": song.get("id"),
                         "title": song.get("title"),
                         "artist": song.get("artist"),
+                        "mbid": song.get("musicBrainzId"),
                         "album": song.get("album"),
                         "year": song.get("year"),
                         "genre": song.get("genre"),
@@ -527,6 +528,7 @@ class NavidromeClient:
                         "id": song.get("id"),
                         "title": song.get("title"),
                         "artist": song.get("artist"),
+                        "mbid": song.get("musicBrainzId"),
                         "album": song.get("album"),
                         "year": song.get("year"),
                         "genre": song.get("genre"),
@@ -768,6 +770,7 @@ class NavidromeClient:
                     "id": song.get("id"),
                     "title": song.get("title"),
                     "artist": song.get("artist"),
+                    "mbid": song.get("musicBrainzId"),
                     "album": song.get("album"),
                     "genre": song.get("genre"),
                     "year": song.get("year"),
@@ -880,6 +883,7 @@ class NavidromeClient:
                 "id": song.get("id"),
                 "title": song.get("title"),
                 "artist": song.get("artist"),
+                "mbid": song.get("musicBrainzId"),
                 "artist_id": song.get("artistId"),
                 "album": song.get("album"),
                 "year": song.get("year"),
@@ -939,6 +943,7 @@ class NavidromeClient:
                     "id": song.get("id"),
                     "title": song.get("title"),
                     "artist": song.get("artist"),
+                    "mbid": song.get("musicBrainzId"),
                     "artist_id": song.get("artistId"),
                     "album": song.get("album"),
                     "year": song.get("year"),
@@ -954,6 +959,27 @@ class NavidromeClient:
             raise Exception(f"HTTP error from Navidrome: {e.response.status_code}")
         except Exception as e:
             raise Exception(f"Unexpected error searching songs for '{query}': {e}")
+
+    async def get_artist_mbid(self, artist_id: str) -> Optional[str]:
+        """The artist's MusicBrainz ID from Subsonic getArtist (OpenSubsonic
+        `musicBrainzId`), or None when Navidrome doesn't expose one or the call fails.
+        """
+        if not artist_id:
+            return None
+        try:
+            await self._ensure_authenticated()
+            params = self._get_subsonic_params()
+            params["id"] = artist_id
+            response = await self.client.get(f"{self.base_url}/rest/getArtist.view", params=params)
+            response.raise_for_status()
+            sub = response.json().get("subsonic-response", {})
+            if sub.get("status") != "ok":
+                return None
+            mbid = (sub.get("artist") or {}).get("musicBrainzId")
+            return mbid.strip() if isinstance(mbid, str) and mbid.strip() else None
+        except Exception as e:
+            print(f"⚠️ getArtist MBID lookup failed: {describe_exception(e)}")
+            return None
 
     async def get_similar_artists(self, artist_id: str, count: int = 20) -> List[Dict[str, Any]]:
         """Fetch artists similar to the given artist using the Subsonic getArtistInfo2 API
@@ -1069,6 +1095,7 @@ class NavidromeClient:
                     "id": sid,
                     "title": song.get("title"),
                     "artist": song.get("artist"),
+                    "mbid": song.get("musicBrainzId"),
                     "artist_id": song.get("artistId"),
                     "album": song.get("album"),
                     "year": song.get("year", 0),

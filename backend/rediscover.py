@@ -475,15 +475,15 @@ class ReDiscoverV2Processor:
     for temporal analysis and two-phase AI collaboration.
     """
 
-    def __init__(self, navidrome_client, ai_client, db_manager, lastfm_client=None):
+    def __init__(self, navidrome_client, ai_client, db_manager, listenbrainz_client=None):
         self.navidrome_client = navidrome_client
         self.ai_client = ai_client
         self.db = db_manager
-        # Optional Last.fm client. Re-Discover reads Navidrome's own `played`
+        # Optional ListenBrainz client. Re-Discover reads Navidrome's own `played`
         # timestamps, so a listener who plays through another app (scrobbling to
-        # Last.fm) looks idle here and hits the fallback. When present, this lets
-        # the fallback draw on their real Last.fm listening instead.
-        self.lastfm_client = lastfm_client
+        # ListenBrainz) looks idle here and hits the fallback. When present, this lets
+        # the fallback draw on their real ListenBrainz listening instead.
+        self.listenbrainz_client = listenbrainz_client
         self.config = {
             "track_count": 25,
             "target_period_days_start": 90,
@@ -1018,16 +1018,16 @@ class ReDiscoverV2Processor:
         # For now, just log to console
         print(f"📊 V2 Playlist logged: {len(playlist_data['tracks'])} tracks, theme: {theme_strategy.get('theme_identified', 'Unknown')}, tracks analyzed: {tracks_analyzed}")
 
-    async def _resolve_lastfm_tracks(
+    async def _resolve_listening_history_tracks(
         self,
         top: List[Dict[str, str]],
         library_ids: Optional[List[str]],
         needed: int
     ) -> List[Dict[str, Any]]:
-        """Resolve ranked Last.fm (artist, title) rows to library tracks via search3.
+        """Resolve ranked ListenBrainz (artist, title) rows to library tracks via search3.
 
         Matches on a normalised (artist, title) key — the same folding used across
-        the Last.fm integration — dedupes by track id and stops once `needed` are
+        the ListenBrainz integration — dedupes by track id and stops once `needed` are
         found. Rows that don't resolve are skipped: those are tracks the listener
         played elsewhere but doesn't own, which belong in album suggestions, not a
         library playlist. Rank order (most-played first) is preserved.
@@ -1059,51 +1059,51 @@ class ReDiscoverV2Processor:
 
         return resolved
 
-    async def _lastfm_top_tracks_fallback(
+    async def _listening_history_fallback(
         self,
         user_id: str,
         server_id: str,
         library_ids: Optional[List[str]] = None
     ) -> Optional[Dict[str, Any]]:
-        """Build a Re-Discover playlist from the listener's Last.fm top tracks.
+        """Build a Re-Discover playlist from the listener's ListenBrainz top tracks.
 
-        Returns None when Last.fm isn't configured, the lookup fails, or too few
+        Returns None when ListenBrainz isn't configured, the lookup fails, or too few
         top tracks resolve to the library — so the caller falls through to the
         starred / most-played fallbacks unchanged.
         """
-        client = self.lastfm_client
+        client = self.listenbrainz_client
         if not client or not getattr(client, "user_enabled", False):
             return None
 
         try:
-            top = await client.top_tracks(period="6month", limit=200)
+            top = await client.top_tracks(limit=200)
         except Exception as e:
-            print(f"⚠️ Last.fm top-tracks fallback failed: {e}")
+            print(f"⚠️ ListenBrainz top-tracks fallback failed: {e}")
             return None
 
         if not top:
             return None
 
         needed = self.config["track_count"]
-        resolved = await self._resolve_lastfm_tracks(top, library_ids, needed)
+        resolved = await self._resolve_listening_history_tracks(top, library_ids, needed)
 
         if len(resolved) < self.config["min_target_period_tracks"]:
-            print(f"⚠️ Last.fm fallback resolved only {len(resolved)} library tracks; skipping")
+            print(f"⚠️ Listening-history fallback resolved only {len(resolved)} library tracks; skipping")
             return None
 
-        print(f"🎧 Last.fm fallback: built from {len(resolved)} top tracks in the library")
+        print(f"🎧 Listening-history fallback: built from {len(resolved)} top tracks in the library")
         return {
             "name": "Re-Discover Weekly",
             "tracks": [{
                 **track,
                 "ai_curated": False,
-                "ai_reasoning": "Fallback: your most-played Last.fm tracks that are in your library."
+                "ai_reasoning": "Fallback: your most-played tracks on ListenBrainz that are in your library."
             } for track in resolved[:needed]],
-            "theme": "Last.fm Favourites",
-            "mode": "LASTFM_FALLBACK",
+            "theme": "Listening History Favourites",
+            "mode": "LISTENING_HISTORY_FALLBACK",
             "reasoning": (
                 "Not much recent in-app listening history, so this is built from the tracks "
-                "you've played most on Last.fm that you own — a rediscovery of your real favourites."
+                "you've played most (per ListenBrainz) that you own — a rediscovery of your real favourites."
             ),
             "user_id": user_id,
             "server_id": server_id,
@@ -1113,11 +1113,11 @@ class ReDiscoverV2Processor:
 
     async def _trigger_fallback(self, user_id: str, server_id: str, library_ids: Optional[List[str]] = None) -> Dict[str, Any]:
         """Fallback strategy when insufficient target period tracks are found."""
-        # First choice: the listener's own Last.fm top tracks resolved to the
+        # First choice: the listener's own ListenBrainz top tracks resolved to the
         # library — a real re-discovery set even when in-app history is empty.
-        lastfm_playlist = await self._lastfm_top_tracks_fallback(user_id, server_id, library_ids)
-        if lastfm_playlist:
-            return lastfm_playlist
+        history_playlist = await self._listening_history_fallback(user_id, server_id, library_ids)
+        if history_playlist:
+            return history_playlist
 
         try:
             # Try starred tracks approach

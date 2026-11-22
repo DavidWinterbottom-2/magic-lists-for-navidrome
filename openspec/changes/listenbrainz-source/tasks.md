@@ -7,12 +7,12 @@
 - [x] 1.2 `ListenBrainzClient`: parse helpers + `loved_track_keys`, `top_tracks`; 204/error/timeout → empty, errors not cached. Verify: fixture tests incl. 204, malformed, empty.
 
 ## 2. Loved boost and Re-Discover
-- [ ] 2.1 `apply_loved_signal` uses the new client; MBID-first then name matching. Verify: tests for MBID match, name fallback, unconfigured.
-- [ ] 2.2 Re-Discover top-tracks fallback, neutral label/mode. Verify: ported `test_rediscover_lastfm` cases pass; falls through below min.
+- [x] 2.1 `apply_loved_signal` uses the new client; MBID-first then name matching. Verify: tests for MBID match, name fallback, unconfigured.
+- [x] 2.2 Re-Discover top-tracks fallback, neutral label/mode. Verify: ported `test_rediscover_lastfm` cases pass; falls through below min.
 
 ## 3. Similar artists (droppable per 0.2)
-- [ ] 3.1 Navidrome artist-MBID method; `similar_artists(mbid)`. Verify: fixture + fake-Navidrome tests, no-MBID degrade test.
-- [ ] 3.2 Radio uses it; `ai_client` prompt wording provider-neutral. Verify: `test_radio*` ported; ranking and out-of-library filter asserted.
+- [x] 3.1 Navidrome artist-MBID method; `similar_artists(mbid)`. Verify: fixture + fake-Navidrome tests, no-MBID degrade test.
+- [x] 3.2 Radio uses it; `ai_client` prompt wording provider-neutral. Verify: `test_radio*` ported; ranking and out-of-library filter asserted.
 
 ## 4. Removal, health, docs, release
 - [ ] 4.1 Delete `lastfm_client.py`, `LASTFM_*`, Last.fm tests; ListenBrainz health check (never fails startup). Verify: `grep -ri lastfm` empty outside `docs/reviews/LOG.md`; health tests for all four states.
