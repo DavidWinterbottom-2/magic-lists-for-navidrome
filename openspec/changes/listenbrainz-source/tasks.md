@@ -1,10 +1,10 @@
 ## 0. Probe (first; blocks the rest)
-- [ ] 0.1 Run `probe.sh` from a host that reaches ListenBrainz/MusicBrainz/Navidrome (orchestrator Pi bridge or David). Paste redacted output on #65; save trimmed JSON as test fixtures. Verify: A1–A4 each marked confirmed/refuted on the issue.
+- [x] 0.1 (probe output posted on #65 2026-11-22: A1 204 only, A2 and A3 confirmed, A4 not run and still open) Run `probe.sh` from a host that reaches ListenBrainz/MusicBrainz/Navidrome (orchestrator Pi bridge or David). Paste redacted output on #65; save trimmed JSON as test fixtures. Verify: A1–A4 each marked confirmed/refuted on the issue.
 - [ ] 0.2 **Decision point 2026-11-25:** if A3 or A4 is refuted or the probe is not run, drop group 3 to a follow-up issue and ship the rest.
 
 ## 1. Client and matching (tests first)
 - [x] 1.1 `name_matching.py` (moved helpers); update imports. Verify: existing folding tests pass unchanged.
-- [ ] 1.2 `ListenBrainzClient`: parse helpers + `loved_track_keys`, `top_tracks`; 204/error/timeout → empty, errors not cached. Verify: fixture tests incl. 204, malformed, empty.
+- [x] 1.2 `ListenBrainzClient`: parse helpers + `loved_track_keys`, `top_tracks`; 204/error/timeout → empty, errors not cached. Verify: fixture tests incl. 204, malformed, empty.
 
 ## 2. Loved boost and Re-Discover
 - [ ] 2.1 `apply_loved_signal` uses the new client; MBID-first then name matching. Verify: tests for MBID match, name fallback, unconfigured.
