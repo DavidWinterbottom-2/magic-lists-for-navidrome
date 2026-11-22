@@ -60,7 +60,9 @@ EXEMPT_FILES = {
 # Directories covered by a single entry, or owned elsewhere entirely. Hidden
 # directories are skipped wholesale (see scan below), which covers .claude/,
 # .github/ and the various tool caches that ship their own README.
-EXEMPT_DIRS = ("standards/", "docs/reviews/", "node_modules/", "venv/", "htmlcov/", "test-results/")
+# openspec/changes/ holds in-flight change artifacts (archived on completion), not
+# standing guidance for agents.
+EXEMPT_DIRS = ("standards/", "docs/reviews/", "openspec/changes/", "node_modules/", "venv/", "htmlcov/", "test-results/")
 # Entries whose files are copied from the devcontainer-sandbox template and
 # overwritten on every sync (template-sync.yml for the skills,
 # scripts/sync-from-template.sh for the standards). Their "Points to" is not
