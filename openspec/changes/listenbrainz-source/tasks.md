@@ -17,7 +17,7 @@
 ## 4. Removal, health, docs, release
 - [x] 4.1 Delete `lastfm_client.py`, `LASTFM_*`, Last.fm tests; ListenBrainz health check (never fails startup). Verify: `grep -ri lastfm` empty outside `docs/reviews/LOG.md`; health tests for all four states.
 - [x] 4.2 `.env.example`, README, SETUP, docs/architecture.md, AGENTS.md. Verify: grep above.
-- [ ] 4.3 Bump 0.7.0 in `pyproject.toml`; full test suite + coverage gate + CI green. Verify: `version-bumped` passes.
+- [x] 4.3 Bump 0.7.0 in `pyproject.toml`; full test suite + coverage gate + CI green. Verify: `version-bumped` passes.
 - [ ] 4.4 Open docker-infra follow-up issue (`LISTENBRAINZ_USERNAME`, optional `LISTENBRAINZ_URL` in `magiclists/docker-compose.yml`) at stage:define, linking #65.
 
 ## 5. Deploy (after merge)
