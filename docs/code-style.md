@@ -102,7 +102,7 @@ not to be satisfied.
   how to run it.
 - **Fakes, not mocking libraries.** The suite uses hand-written fake clients
   (`FakeNav` and friends) and plain dicts for tracks, so it runs without a live
-  Navidrome, Last.fm or AI provider. Keep that — it survives the pytest move
+  Navidrome, ListenBrainz or AI provider. Keep that — it survives the pytest move
   unchanged, and it's why the tests run in under two seconds.
 - The valuable tests here cover the guarantees rather than the model: that the
   seed leads, that the cap holds, that a thin pool yields a short playlist and a

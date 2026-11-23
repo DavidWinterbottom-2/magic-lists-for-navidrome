@@ -1,4 +1,4 @@
-"""Tests for the Lidarr write client — see tests/test_lastfm_client.py for the
+"""Tests for the Lidarr write client — see tests/test_listenbrainz_client.py for the
 sibling pattern this mirrors (no network; the httpx client is swapped for a
 stub that returns canned payloads).
 

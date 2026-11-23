@@ -70,7 +70,7 @@ station is named after the seed (`Dan Mangan Radio`) unless you name it yourself
 1. **Gather a candidate pool** ([`backend/radio.py`](backend/radio.py)) — each
    step only runs while the pool is still thin, so one good source short-circuits
    the rest:
-   1. **Similar songs** via Subsonic `getSimilarSongs2` — a Last.fm-backed,
+   1. **Similar songs** via Subsonic `getSimilarSongs2` — an external-agent-backed,
       library-resident pool of the seed artist plus similar artists, in one call.
    2. **The seed artist's own tracks**, so the seed is guaranteed to be present.
    3. **Backfill from similar artists' catalogues** (up to 12 artists).
@@ -116,10 +116,11 @@ Alongside the tracklist, Radio suggests 3–5 albums by fitting artists that are
 **not** in your library — the point being to show you exactly what to buy to make
 the next station better.
 
-- **Grounded in Last.fm.** When `LASTFM_API_KEY` is set, the suggestions are
-  drawn from Last.fm's similar-artist graph minus everything already in your
-  library, so the names are real and genuinely absent. Without Last.fm, the model
-  falls back to its own knowledge.
+- **Grounded in ListenBrainz.** When `LISTENBRAINZ_USERNAME` is set and Navidrome
+  knows the seed artist's MusicBrainz ID, the suggestions are drawn from
+  ListenBrainz's similar-artist data minus everything already in your library, so
+  the names are real and genuinely absent. Otherwise the model falls back to its
+  own knowledge.
 - **One click to Lidarr.** Set `LIDARR_URL` and each suggestion becomes a deep
   link into Lidarr's *Add New* search, prefilled with the artist and album.
   Unset, they render as plain text. Add `LIDARR_API_KEY`,
@@ -184,9 +185,9 @@ LAN exactly as it always did.
 
 - **Radio** — the whole feature, including library-gap reporting and album
   suggestions ([above](#radio-in-detail)).
-- **Last.fm integration** — loved tracks boost scoring in every playlist type,
-  Radio's album suggestions are grounded in the similar-artist graph, and
-  Re-Discover gains a Last.fm fallback. Status is surfaced on the system-check
+- **ListenBrainz integration** — loved tracks boost scoring in every playlist type,
+  Radio's album suggestions are grounded in the similar-artist data, and
+  Re-Discover gains a listening-history fallback. Status is surfaced on the system-check
   page. Entirely optional.
 - **Recreate button** plus a stored **build record**, so you can see how a
   playlist was last built and rebuild it on demand.
@@ -318,7 +319,7 @@ ANALYTICS_SCRIPT_URL=https://<your-umami>/script.js
 ANALYTICS_WEBSITE_ID=00000000-0000-0000-0000-000000000000
 ```
 
-**Integrations (optional).** `LASTFM_API_KEY` + `LASTFM_USERNAME` sharpen
+**Integrations (optional).** `LISTENBRAINZ_USERNAME` sharpens
 curation; `LIDARR_URL` turns Radio's album suggestions into one-click adds.
 
 ### 4. Deploy, verify, roll back
@@ -331,7 +332,7 @@ make logs
 ```
 
 Then open the app and check **`/system-check`** — it validates the Navidrome URL,
-credentials and API access, the AI provider, library configuration and Last.fm,
+credentials and API access, the AI provider, library configuration and ListenBrainz,
 with a specific suggestion for anything that fails.
 
 Watchtower picks up new `:latest` digests automatically. To pin or roll back, set
@@ -448,7 +449,7 @@ Full annotated list in [`.env.example`](.env.example).
 
 | Variable | Notes |
 | --- | --- |
-| `LASTFM_API_KEY` / `LASTFM_USERNAME` | Loved-track scoring and grounded Radio suggestions. Needs Settings → Privacy → "Hide recent listening information" **off** |
+| `LISTENBRAINZ_USERNAME` | Loved-track scoring, grounded Radio suggestions and the Re-Discover fallback. Username only, no token. Optional `LISTENBRAINZ_URL` for a self-hosted server (similar artists always use the public LB Labs API) |
 | `LIDARR_URL` | Turns Radio album suggestions into Lidarr *Add New* links |
 | `LIDARR_API_KEY` / `LIDARR_QUALITY_PROFILE_ID` / `LIDARR_ROOT_FOLDER_PATH` | All three together turn that link into a direct "Add to Lidarr" API call |
 | `NAVIDROME_LIBRARY_ID` | Target one library; leave empty to use all of them |
@@ -525,7 +526,7 @@ Configuration is validated on startup, and you can revisit it any time at
 - **Navidrome artists API** — API access working
 - **AI provider** — configured and reachable
 - **Library configuration** — single vs multiple libraries
-- **Last.fm integration** — key valid, username readable (never fails the page;
+- **ListenBrainz integration** — user found and reachable (never fails the page;
   it's optional)
 
 Each failure comes with a specific suggestion.
@@ -685,7 +686,7 @@ for scan errors, and verify `NAVIDROME_LIBRARY_ID` if you set one.
 
 **Radio keeps producing the same station.** Check the build note on the playlist.
 If the similar-songs lookup failed, the station was rebuilt from a reduced pool
-and will look much like the last one — that's a Navidrome/Last.fm recall problem,
+and will look much like the last one — that's a Navidrome similarity-recall problem,
 not a curation one.
 
 **Radio stations come up short.** Your library doesn't have enough similar-style

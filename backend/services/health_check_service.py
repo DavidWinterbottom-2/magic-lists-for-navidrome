@@ -3,6 +3,12 @@ import httpx
 import asyncio
 import aiosqlite
 from typing import Dict, List, Any
+from urllib.parse import quote
+
+from ..errors import describe_exception
+from ..listenbrainz_client import DEFAULT_API_ROOT
+
+
 class HealthCheckService:
     """Service to perform startup system checks for MagicLists application"""
     
@@ -55,10 +61,10 @@ class HealthCheckService:
         checks.append(library_check)
         # Library config is informational only, don't fail on it
 
-        # Last.fm is an optional integration; surface its status but never fail
+        # ListenBrainz is an optional integration; surface its status but never fail
         # the overall check on it — the app works fully without it.
-        lastfm_check = await self._check_lastfm()
-        checks.append(lastfm_check)
+        listenbrainz_check = await self._check_listenbrainz()
+        checks.append(listenbrainz_check)
 
         # Track Umami events
         await self._track_umami_events(all_passed, checks)
@@ -623,86 +629,57 @@ class HealthCheckService:
                 "suggestion": "API key is configured but service connectivity could not be verified"
             }
     
-    async def _check_lastfm(self) -> Dict[str, str]:
-        """Check the optional Last.fm integration configuration and connectivity.
+    async def _check_listenbrainz(self) -> Dict[str, str]:
+        """Check the optional ListenBrainz integration (username-only, public reads).
 
-        Last.fm is opt-in and the app works fully without it, so a missing or
-        broken configuration never fails the overall system check — it surfaces
-        as info/warning so the listener can see at a glance whether the
-        loved-track boost, grounded Radio album suggestions and Re-Discover
-        top-tracks fallback are actually live.
+        ListenBrainz is opt-in and the app works fully without it, so no state here
+        is ever "error": a missing or broken configuration surfaces as info/warning
+        so the listener can see whether the loved-track boost, grounded Radio
+        album suggestions and the Re-Discover fallback are live. Never fails startup.
         """
-        api_key = os.getenv("LASTFM_API_KEY", "").strip()
-        username = os.getenv("LASTFM_USERNAME", "").strip()
-
-        if not api_key:
-            return {
-                "name": "Last.fm Integration",
-                "status": "info",
-                "message": "Not configured — the loved-track boost, grounded Radio album suggestions and Re-Discover top-tracks fallback are off (all optional).",
-                "suggestion": "To enable them, set LASTFM_API_KEY and LASTFM_USERNAME in your .env file. Create a key at https://www.last.fm/api/account/create"
-            }
+        name = "ListenBrainz Integration"
+        username = os.getenv("LISTENBRAINZ_USERNAME", "").strip()
+        root = (os.getenv("LISTENBRAINZ_URL") or DEFAULT_API_ROOT).strip().rstrip("/")
 
         if not username:
             return {
-                "name": "Last.fm Integration",
-                "status": "warning",
-                "message": "LASTFM_API_KEY is set but LASTFM_USERNAME is not — Radio album suggestions can use Last.fm, but your loved and top tracks can't be read.",
-                "suggestion": "Set LASTFM_USERNAME in your .env file to enable the loved-track boost and the Re-Discover top-tracks fallback."
+                "name": name,
+                "status": "info",
+                "message": "Not configured — the loved-track boost, grounded Radio album suggestions and Re-Discover listening-history fallback are off (all optional).",
+                "suggestion": "To enable them, set LISTENBRAINZ_USERNAME in your .env file. No token is needed."
             }
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(
-                    "https://ws.audioscrobbler.com/2.0/",
-                    params={
-                        "method": "user.getInfo",
-                        "user": username,
-                        "api_key": api_key,
-                        "format": "json"
-                    }
-                )
-            data = response.json()
-            error_code = data.get("error")
-
-            # Last.fm error codes: 10 = invalid API key, 6 = user not found.
-            if error_code == 10:
+                response = await client.get(f"{root}/1/user/{quote(username, safe='')}/listen-count")
+            if response.status_code == 404:
                 return {
-                    "name": "Last.fm Integration",
+                    "name": name,
                     "status": "warning",
-                    "message": "LASTFM_API_KEY is invalid — Last.fm features will stay off.",
-                    "suggestion": "Check LASTFM_API_KEY in your .env file, or create a new key at https://www.last.fm/api/account/create"
+                    "message": f"ListenBrainz user '{username}' was not found.",
+                    "suggestion": "Check LISTENBRAINZ_USERNAME in your .env file — it is your ListenBrainz username, not your email address."
                 }
-            if error_code == 6:
-                return {
-                    "name": "Last.fm Integration",
-                    "status": "warning",
-                    "message": f"Last.fm user '{username}' was not found.",
-                    "suggestion": "Check LASTFM_USERNAME in your .env file — it should be your Last.fm handle, not your email address."
-                }
-            if error_code:
-                return {
-                    "name": "Last.fm Integration",
-                    "status": "warning",
-                    "message": f"Last.fm returned error {error_code}: {data.get('message', 'unknown error')}",
-                    "suggestion": "Check your LASTFM_API_KEY and LASTFM_USERNAME in your .env file."
-                }
-
-            playcount = str(data.get("user", {}).get("playcount", "")).strip()
-            scrobbles = f" ({playcount} scrobbles)" if playcount else ""
+            response.raise_for_status()
+            try:
+                count = int(response.json()["payload"]["count"])
+            except (KeyError, TypeError, ValueError):
+                count = None
+            listens = f" ({count} listens)" if count is not None else ""
             return {
-                "name": "Last.fm Integration",
+                "name": name,
                 "status": "success",
-                "message": f"Connected as '{username}'{scrobbles}. Loved-track boost, grounded Radio suggestions and the Re-Discover fallback are active.",
-                "suggestion": "If your loved or top tracks look empty, make sure Settings → Privacy → 'Hide recent listening information' is off on Last.fm."
+                "message": f"Connected as '{username}'{listens}. Loved-track boost, grounded Radio suggestions and the Re-Discover fallback are active.",
+                "suggestion": (
+                    "No listens yet: turn on ListenBrainz scrobbling in Navidrome (and import your history) "
+                    "so top tracks fill in." if count == 0 else ""
+                )
             }
-
         except Exception as e:
             return {
-                "name": "Last.fm Integration",
+                "name": name,
                 "status": "warning",
-                "message": f"Last.fm is configured but the connectivity test failed: {str(e)}",
-                "suggestion": "Check your internet connection and that ws.audioscrobbler.com is reachable from this container."
+                "message": f"ListenBrainz is configured but the connectivity test failed: {describe_exception(e)}",
+                "suggestion": f"Check your internet connection and that {root} is reachable from this container."
             }
 
     async def _check_navidrome_library_config(self) -> Dict[str, str]:

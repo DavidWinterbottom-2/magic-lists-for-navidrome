@@ -53,7 +53,8 @@ from .radio import (
     lidarr_add_url, promote_seed_first
 )
 from .track_scoring import filter_tracks_for_this_is_playlist, mark_starred_loved
-from .lastfm_client import LastfmClient, mark_loved
+from .listenbrainz_client import ListenBrainzClient
+from .name_matching import loved_key, mark_loved
 from .lidarr_client import LidarrClient
 # SYSTEM CHECK FEATURE - START
 from .services.health_check_service import HealthCheckService
@@ -302,7 +303,7 @@ def song_labels(songs) -> list:
 # Initialize clients (lazy loading)
 navidrome_client = None
 ai_client = None
-lastfm_client = None
+listenbrainz_client = None
 lidarr_client = None
 
 # Initialize scheduler (will be started on app startup)
@@ -327,11 +328,11 @@ def get_ai_client():
     return ai_client
 
 
-def get_lastfm_client():
-    global lastfm_client
-    if lastfm_client is None:
-        lastfm_client = LastfmClient()
-    return lastfm_client
+def get_listenbrainz_client():
+    global listenbrainz_client
+    if listenbrainz_client is None:
+        listenbrainz_client = ListenBrainzClient()
+    return listenbrainz_client
 
 
 def get_lidarr_client():
@@ -348,20 +349,24 @@ async def apply_loved_signal(tracks):
       1. Navidrome's own star (`local_library_likes`) — the listener's real
          favourites, including any hearted from a client like Amperfy. Always
          applied; needs no configuration.
-      2. Last.fm loved tracks — loves made directly on Last.fm. Applied only when
-         Last.fm is configured, since Navidrome doesn't sync its star to Last.fm.
+      2. ListenBrainz loved tracks — loves made on ListenBrainz. Applied only when
+         LISTENBRAINZ_USERNAME is set (Navidrome's star may not reach ListenBrainz).
+         A track matches by recording MBID or by folded (artist, title); either is
+         enough (lenient matching, agreed at test for #65).
     """
     starred = mark_starred_loved(tracks)
     if starred:
         scheduler_logger.info(f"❤️ Marked {starred} starred track(s) as loved")
 
-    client = get_lastfm_client()
-    if not client.user_enabled:
+    client = get_listenbrainz_client()
+    if not client.enabled:
         return
-    loved_keys = await client.loved_track_keys()
-    marked = mark_loved(tracks, loved_keys)
+    loved = await client.loved_tracks()
+    keys = {loved_key(r["artist"], r["title"]) for r in loved if r["artist"] and r["title"]}
+    mbids = {r["mbid"].lower() for r in loved if r["mbid"]}
+    marked = mark_loved(tracks, keys, mbids)
     if marked:
-        scheduler_logger.info(f"❤️ Last.fm: marked {marked} further loved track(s) in candidate pool")
+        scheduler_logger.info(f"❤️ ListenBrainz: marked {marked} further loved track(s) in candidate pool")
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
@@ -845,7 +850,7 @@ async def create_radio_playlist(
             raise HTTPException(status_code=400, detail="seed_type must be 'artist' or 'song'")
 
         # Resolve the seed and gather candidate tracks
-        processor = RadioProcessor(nav_client, get_lastfm_client())
+        processor = RadioProcessor(nav_client, get_listenbrainz_client())
         try:
             seed = await processor.resolve_seed(request.seed_type, request.seed_id, request.library_ids)
         except Exception as e:
@@ -868,8 +873,8 @@ async def create_radio_playlist(
         if filter_metadata['filtered']:
             scheduler_logger.info(f"🎯 Radio smart filtering: {filter_metadata['source_count']} → {filter_metadata['sent_count']} tracks")
 
-        # Ground album suggestions in real Last.fm similar artists the listener
-        # doesn't own (empty when Last.fm isn't configured — model falls back to
+        # Ground album suggestions in real ListenBrainz similar artists the listener
+        # doesn't own (empty when ListenBrainz isn't configured — model falls back to
         # its own knowledge, as before).
         album_artists = [
             artist["name"]
@@ -1070,7 +1075,7 @@ async def get_rediscover_weekly_v2(library_ids: Optional[List[str]] = Query(None
         server_id = nav_client.base_url or "unknown_server"  # Use base URL as server identifier
 
         # Create ReDiscoverV2Processor instance
-        processor = ReDiscoverV2Processor(nav_client, ai_client, db, get_lastfm_client())
+        processor = ReDiscoverV2Processor(nav_client, ai_client, db, get_listenbrainz_client())
 
         # Generate the playlist
         result = await processor.generate_playlist(user_id, server_id, library_ids)
@@ -1106,7 +1111,7 @@ async def create_rediscover_playlist_v2(
         server_id = nav_client.base_url or "unknown_server"
 
         # Create ReDiscoverV2Processor instance
-        processor = ReDiscoverV2Processor(nav_client, ai_client, db, get_lastfm_client())
+        processor = ReDiscoverV2Processor(nav_client, ai_client, db, get_listenbrainz_client())
 
         # Generate the playlist
         playlist_data = await processor.generate_playlist(user_id, server_id, request.library_ids)
@@ -1506,7 +1511,7 @@ async def refresh_rediscover_playlist(scheduled_playlist, db: DatabaseManager, p
         server_id = nav_client.base_url or "unknown_server"
 
         # Create ReDiscoverV2Processor instance (improved fallback handling)
-        processor = ReDiscoverV2Processor(nav_client, ai_client, db, get_lastfm_client())
+        processor = ReDiscoverV2Processor(nav_client, ai_client, db, get_listenbrainz_client())
 
         # Prepare library IDs for v2.0 processor
         library_ids = [scheduled_playlist.library_id] if hasattr(scheduled_playlist, 'library_id') and scheduled_playlist.library_id else None
@@ -1724,7 +1729,7 @@ async def refresh_radio_playlist(scheduled_playlist, db: DatabaseManager, propag
         original_length = original_playlist.get("playlist_length", 25)
 
         # Resolve seed and gather fresh candidates
-        processor = RadioProcessor(nav_client, get_lastfm_client())
+        processor = RadioProcessor(nav_client, get_listenbrainz_client())
         seed = await processor.resolve_seed(seed_type, seed_id, library_ids)
         candidate_tracks = await processor.gather_candidate_tracks(seed, library_ids)
         if not candidate_tracks:

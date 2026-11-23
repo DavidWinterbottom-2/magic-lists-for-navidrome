@@ -8,7 +8,7 @@ integration did with that was build a deep link into Lidarr's "Add New" search
 hand. This client does the add itself: look the artist up by name to get its
 MusicBrainz id, then POST it to Lidarr so it starts monitoring/downloading.
 
-It is OPTIONAL like the Last.fm client: with no LIDARR_API_KEY (on top of the
+It is OPTIONAL like the ListenBrainz client: with no LIDARR_API_KEY (on top of the
 LIDARR_URL the deep-link feature already needs) plus a quality profile and root
 folder configured, `enabled` is False and callers fall back to the existing
 deep-link behaviour.

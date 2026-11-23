@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Union, Optional
 from .errors import describe_exception
 
 # httpx defaults to a 5s timeout on everything, which is far too tight for
-# Navidrome's heavier endpoints — getSimilarSongs2 does Last.fm lookups and real
+# Navidrome's heavier endpoints — getSimilarSongs2 does external similarity lookups and real
 # database work, and the whole server slows down while a library scan is running
 # (i.e. exactly after you've added the albums you want a station to pick up).
 #
@@ -364,6 +364,7 @@ class NavidromeClient:
                             "id": song.get("id"),
                             "title": song.get("title"),
                             "artist": artist_name,  # Include artist name for AI processing
+                            "mbid": song.get("musicBrainzId"),
                             "artist_id": artist_id,
                             "album": album_name,
                             "year": song.get("year", album_year),
@@ -447,6 +448,7 @@ class NavidromeClient:
                         "id": song.get("id"),
                         "title": song.get("title"),
                         "artist": song.get("artist"),
+                        "mbid": song.get("musicBrainzId"),
                         "album": song.get("album"),
                         "year": song.get("year"),
                         "genre": song.get("genre"),
@@ -527,6 +529,7 @@ class NavidromeClient:
                         "id": song.get("id"),
                         "title": song.get("title"),
                         "artist": song.get("artist"),
+                        "mbid": song.get("musicBrainzId"),
                         "album": song.get("album"),
                         "year": song.get("year"),
                         "genre": song.get("genre"),
@@ -768,6 +771,7 @@ class NavidromeClient:
                     "id": song.get("id"),
                     "title": song.get("title"),
                     "artist": song.get("artist"),
+                    "mbid": song.get("musicBrainzId"),
                     "album": song.get("album"),
                     "genre": song.get("genre"),
                     "year": song.get("year"),
@@ -880,6 +884,7 @@ class NavidromeClient:
                 "id": song.get("id"),
                 "title": song.get("title"),
                 "artist": song.get("artist"),
+                "mbid": song.get("musicBrainzId"),
                 "artist_id": song.get("artistId"),
                 "album": song.get("album"),
                 "year": song.get("year"),
@@ -939,6 +944,7 @@ class NavidromeClient:
                     "id": song.get("id"),
                     "title": song.get("title"),
                     "artist": song.get("artist"),
+                    "mbid": song.get("musicBrainzId"),
                     "artist_id": song.get("artistId"),
                     "album": song.get("album"),
                     "year": song.get("year"),
@@ -955,10 +961,31 @@ class NavidromeClient:
         except Exception as e:
             raise Exception(f"Unexpected error searching songs for '{query}': {e}")
 
+    async def get_artist_mbid(self, artist_id: str) -> Optional[str]:
+        """The artist's MusicBrainz ID from Subsonic getArtist (OpenSubsonic
+        `musicBrainzId`), or None when Navidrome doesn't expose one or the call fails.
+        """
+        if not artist_id:
+            return None
+        try:
+            await self._ensure_authenticated()
+            params = self._get_subsonic_params()
+            params["id"] = artist_id
+            response = await self.client.get(f"{self.base_url}/rest/getArtist.view", params=params)
+            response.raise_for_status()
+            sub = response.json().get("subsonic-response", {})
+            if sub.get("status") != "ok":
+                return None
+            mbid = (sub.get("artist") or {}).get("musicBrainzId")
+            return mbid.strip() if isinstance(mbid, str) and mbid.strip() else None
+        except Exception as e:
+            print(f"⚠️ getArtist MBID lookup failed: {describe_exception(e)}")
+            return None
+
     async def get_similar_artists(self, artist_id: str, count: int = 20) -> List[Dict[str, Any]]:
         """Fetch artists similar to the given artist using the Subsonic getArtistInfo2 API
 
-        Similar-artist data is provided by Navidrome's external agents (e.g. Last.fm).
+        Similar-artist data is provided by Navidrome's configured external agents.
         Only artists that exist in the local library carry a usable "id"; artists
         without an id are external suggestions and are skipped here.
 
@@ -1020,7 +1047,7 @@ class NavidromeClient:
     async def get_similar_songs(self, artist_id: str, count: int = 50, library_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         """Fetch similar-style songs for a seed artist via Subsonic getSimilarSongs2.
 
-        getSimilarSongs2 returns a Last.fm-backed collection of songs drawn from
+        getSimilarSongs2 returns an agent-backed collection of songs drawn from
         the seed artist and similar artists — all resident in the local library —
         which makes it a one-call candidate pool for a "radio" station.
 
@@ -1069,6 +1096,7 @@ class NavidromeClient:
                     "id": sid,
                     "title": song.get("title"),
                     "artist": song.get("artist"),
+                    "mbid": song.get("musicBrainzId"),
                     "artist_id": song.get("artistId"),
                     "album": song.get("album"),
                     "year": song.get("year", 0),

@@ -31,7 +31,8 @@ class FakeNav:
     """Minimal async stand-in for NavidromeClient, with call tracking."""
 
     def __init__(self, artist_tracks=None, similar=None, genre_tracks=None,
-                 song=None, artists=None, similar_songs=None):
+                 song=None, artists=None, similar_songs=None, mbids=None):
+        self.mbids = mbids or {}                    # artist_id -> MusicBrainz id
         self.artist_tracks = artist_tracks or {}   # artist_id -> [tracks]
         self.similar = similar or []                # [{id, name}]
         self.genre_tracks = genre_tracks or {}      # genre -> [tracks]
@@ -43,6 +44,9 @@ class FakeNav:
 
     async def get_tracks_by_artist(self, artist_id, library_ids=None):
         return list(self.artist_tracks.get(artist_id, []))
+
+    async def get_artist_mbid(self, artist_id):
+        return self.mbids.get(artist_id)
 
     async def get_similar_artists(self, artist_id, count=20):
         return list(self.similar)
@@ -64,15 +68,15 @@ class FakeNav:
         return list(self.artists)
 
 
-class FakeLastfm:
-    """Minimal stand-in for LastfmClient's similar-artist surface."""
+class FakeListenBrainz:
+    """Minimal stand-in for ListenBrainzClient's similar-artist surface (keyed by MBID)."""
 
-    def __init__(self, similar_by_artist=None, enabled=True):
+    def __init__(self, similar_by_mbid=None, enabled=True):
         self.enabled = enabled
-        self.similar_by_artist = similar_by_artist or {}  # artist_name -> [{name, match}]
+        self.similar_by_mbid = similar_by_mbid or {}  # artist_mbid -> [{name, match}]
 
-    async def similar_artists(self, artist_name, limit=40):
-        return list(self.similar_by_artist.get(artist_name, []))
+    async def similar_artists(self, artist_mbid, limit=40):
+        return list(self.similar_by_mbid.get(artist_mbid, []))
 
 
 class FakeProvider:
@@ -121,23 +125,33 @@ class RadioProcessorTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_out_of_library_artists_excludes_owned_and_keeps_rank(self):
         # Library owns "Massive Attack" (under a differently-cased/accented tag);
-        # the ranked Last.fm suggestions should drop it and keep the rest in order.
-        nav = FakeNav(artists=[{"id": "A1", "name": "Alpha"}, {"id": "A9", "name": "massive attack"}])
-        lastfm = FakeLastfm(similar_by_artist={"Alpha": [
+        # the ranked ListenBrainz suggestions should drop it and keep the rest in order.
+        nav = FakeNav(artists=[{"id": "A1", "name": "Alpha"}, {"id": "A9", "name": "massive attack"}],
+                      mbids={"A1": "mbid-alpha"})
+        listenbrainz = FakeListenBrainz(similar_by_mbid={"mbid-alpha": [
             {"name": "Portishead", "match": "1.0"},
             {"name": "Massive Attack", "match": "0.9"},
             {"name": "Tricky", "match": "0.8"},
         ]})
-        proc = RadioProcessor(nav, lastfm)
+        proc = RadioProcessor(nav, listenbrainz)
         seed = {"type": "artist", "id": "A1", "name": "Alpha",
                 "artist_id": "A1", "artist_name": "Alpha", "genre": None}
 
         result = await proc.similar_out_of_library_artists(seed, limit=8)
         self.assertEqual([r["name"] for r in result], ["Portishead", "Tricky"])
 
-    async def test_out_of_library_artists_empty_without_lastfm(self):
+    async def test_out_of_library_artists_empty_when_seed_has_no_mbid(self):
+        nav = FakeNav(artists=[{"id": "A1", "name": "Alpha"}])  # Navidrome gives no MBID
+        lb = FakeListenBrainz(similar_by_mbid={"mbid-alpha": [{"name": "Portishead", "match": "1"}]})
+        proc = RadioProcessor(nav, lb)
+        seed = {"type": "artist", "id": "A1", "name": "Alpha",
+                "artist_id": "A1", "artist_name": "Alpha", "genre": None}
+        self.assertEqual(await proc.similar_out_of_library_artists(seed), [])
+        self.assertEqual(proc.pool_warnings, [])  # a missing MBID is normal, not a warning
+
+    async def test_out_of_library_artists_empty_without_listenbrainz(self):
         nav = FakeNav(artists=[{"id": "A1", "name": "Alpha"}])
-        proc = RadioProcessor(nav)  # no Last.fm client
+        proc = RadioProcessor(nav)  # no ListenBrainz client
         seed = {"type": "artist", "id": "A1", "name": "Alpha",
                 "artist_id": "A1", "artist_name": "Alpha", "genre": None}
         self.assertEqual(await proc.similar_out_of_library_artists(seed), [])
@@ -602,6 +616,27 @@ def _similar_songs_payload(songs, status="ok"):
     return {"subsonic-response": body}
 
 
+class GetArtistMbidTests(unittest.IsolatedAsyncioTestCase):
+
+    @staticmethod
+    def _payload(artist, status="ok"):
+        return {"subsonic-response": {"status": status, "artist": artist}}
+
+    async def test_returns_the_musicbrainz_id(self):
+        nav = _make_nav_client(self._payload({"id": "A1", "musicBrainzId": " abc-123 "}))
+        self.assertEqual(await nav.get_artist_mbid("A1"), "abc-123")
+        self.assertTrue(nav.client.last_url.endswith("/rest/getArtist.view"))
+        self.assertEqual(nav.client.last_params["id"], "A1")
+
+    async def test_none_when_navidrome_has_no_mbid(self):
+        for artist in ({"id": "A1"}, {"id": "A1", "musicBrainzId": ""}, {"id": "A1", "musicBrainzId": None}):
+            self.assertIsNone(await _make_nav_client(self._payload(artist)).get_artist_mbid("A1"))
+
+    async def test_none_on_error_status_or_missing_id(self):
+        self.assertIsNone(await _make_nav_client(self._payload({}, status="failed")).get_artist_mbid("A1"))
+        self.assertIsNone(await _make_nav_client(self._payload({})).get_artist_mbid(""))
+
+
 class GetSimilarSongsTests(unittest.IsolatedAsyncioTestCase):
 
     def _song(self, sid, **over):
@@ -622,7 +657,7 @@ class GetSimilarSongsTests(unittest.IsolatedAsyncioTestCase):
         # shape must match get_tracks_by_artist / get_song so the AI curator is happy
         self.assertEqual(
             set(t),
-            {"id", "title", "artist", "artist_id", "album", "year", "genre",
+            {"id", "title", "artist", "mbid", "artist_id", "album", "year", "genre",
              "play_count", "local_library_likes"},
         )
         self.assertEqual(t["artist_id"], "A9")

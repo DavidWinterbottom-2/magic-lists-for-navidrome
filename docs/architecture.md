@@ -20,7 +20,7 @@ The backend modules split by responsibility:
 | Candidate pooling and post-curation guarantees | `backend/radio.py`, `backend/rediscover.py` |
 | Engagement scoring, payload trimming | `backend/track_scoring.py` |
 | Provider-agnostic LLM calls | `backend/ai_client.py`, `backend/services/ai_providers.py` |
-| External APIs | `backend/navidrome_client.py`, `backend/lastfm_client.py` |
+| External APIs | `backend/navidrome_client.py`, `backend/listenbrainz_client.py` |
 | Login gate (Entra ID OIDC) | `backend/auth.py` |
 | Persistence | `backend/database.py` |
 | Startup diagnostics | `backend/services/health_check_service.py` |
@@ -70,12 +70,12 @@ that needs saying rather than leaving the user to wonder.
 
 ### 3. Optional integrations degrade, never fail
 
-AI curation, Last.fm and Lidarr are all optional, and each has a defined fallback:
+AI curation, ListenBrainz and Lidarr are all optional, and each has a defined fallback:
 
 | Integration | Absent or failing ⇒ |
 | --- | --- |
 | AI provider | play-count and recency ordering |
-| Last.fm | Navidrome-only signals; the model suggests albums from its own knowledge |
+| ListenBrainz | Navidrome-only signals; the model suggests albums from its own knowledge |
 | Lidarr | album suggestions render as plain text instead of links |
 
 A failing optional dependency logs a warning and takes the fallback. It never
