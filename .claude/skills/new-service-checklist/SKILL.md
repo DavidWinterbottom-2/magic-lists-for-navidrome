@@ -19,10 +19,18 @@ about whether it appears on a tools page.
 
 1. **Create `<tree>/services/<name>/`** with, at minimum: `docker-compose.yml`, `README.md`,
    `Makefile`, and `.env.example` (never commit `.env`). Add a healthcheck to the compose.
-   **Image tag** (§2/§6): a *first-party* service pulls
-   `ghcr.io/davidwinterbottom-2/<name>:latest` (Watchtower-updated); a *third-party* service
-   pins the upstream tag — `image: foo:${FOO_VERSION:-<version>}` or a hard pin — not a bare
-   `:latest`.
+   **Image tag** (REPO-STANDARDS §2/§6 still say `:latest` under Watchtower; both change with #176's `docker-infra` follow-up): a *first-party* service (built from David's own repo) is
+   SHA-pinned and kept out of Watchtower, so the gated `issue-stages` deploy (stage 7) is
+   its only way live and a merge never deploys itself at 08:00:
+   ```yaml
+   image: ghcr.io/davidwinterbottom-2/<name>:${<NAME>_SHA:-latest}
+   labels:
+     - com.centurylinklabs.watchtower.enable=false
+   ```
+   `<NAME>_SHA` is the upper-snake service name (`ynab-ingestor` → `YNAB_INGESTOR_SHA`);
+   the deploy sets it to the full commit SHA, and the repo's publish workflow must push that
+   `:<full-sha>` tag. A *third-party* service stays under Watchtower and pins the upstream
+   tag — `image: foo:${FOO_VERSION:-<version>}` or a hard pin — not a bare `:latest`.
    Don't hand-roll the `Makefile` — set the service variables and `include` the shared
    template (both in `home-docker/services/`) so it exposes the standard targets
    (`help install start stop restart logs status health clean pull config`):

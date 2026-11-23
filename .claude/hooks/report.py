@@ -4,17 +4,23 @@
 report.sh runs this in the background with the hook's JSON on stdin, so
 nothing here can slow down or fail a session. It:
 
+- sends nothing for an event whose folder is in a repo with .claude/tracker-off;
 - works out the repo and branch from the event's own folder (cwd), on every
   event, so an agent working in another repo is reported against that repo;
 - finds the issue the work belongs to: a branch named <issue>-<slug>, a
   "Closes #N" in a PR the session opens, or "#N" in the first prompt, keyed
-  as owner/repo#N;
+  as owner/repo#N. The tracker ignores the prompt refs (it reads the prompt
+  text itself, #49); they're still sent for older trackers;
 - keeps only what decision 7 allows: your prompts up to 4,000 characters
   (8,000 for the first), machine-made pastes over 15 lines folded, Claude's
   replies up to 2,000 characters, no tool output (not even a failed tool's
   error, which is usually its stderr), and secrets scrubbed;
+- when a PR subscription or send_later call succeeds, sends the PR key or the
+  check-in's fire time, never the send_later message;
 - when a turn or the session ends, adds up the tokens each model used, from
   the transcript and its subagents' transcripts, so the tracker can show cost;
+- on a bridge host, sends CLAUDE_TRACKER_ROLE (pi-bridge or desktop-bridge) as
+  `role`, so the tracker never marks the session done (#168);
 - posts it to CLAUDE_EVENTS_URL with CLAUDE_EVENTS_TOKEN, giving up after 3 s.
 """
 
@@ -28,6 +34,7 @@ import sys
 import tempfile
 import time
 import urllib.request
+from datetime import datetime
 from pathlib import Path
 
 MAX_PROMPT = 4000
@@ -209,6 +216,14 @@ def _git(cwd: str, *args: str) -> str:
     except (OSError, subprocess.SubprocessError):
         return ""
     return out.stdout.strip() if out.returncode == 0 else ""
+
+
+def opted_out(cwd: str) -> bool:
+    """True when cwd lies in a git repo that commits .claude/tracker-off at its top
+    level (#146). Applies to every copy of this script, so a managed copy, or an
+    agent sent into an opted-out repo, sends nothing from there."""
+    top = _git(cwd, "rev-parse", "--show-toplevel")
+    return bool(top) and (Path(top) / ".claude" / "tracker-off").exists()
 
 
 def repo_from_remote(url: str) -> str | None:
@@ -416,6 +431,44 @@ def pr_closes(tool: str, tool_input: dict, repo: str | None) -> list[str]:
     return []
 
 
+REMOTE_TOOLS = "mcp__claude-code-remote__"
+WATCH_TOOLS = {
+    f"{REMOTE_TOOLS}subscribe_pr_activity": True,
+    f"{REMOTE_TOOLS}unsubscribe_pr_activity": False,
+}
+SEND_LATER = f"{REMOTE_TOOLS}send_later"
+GITHUB_NAME = re.compile(r"^[a-z0-9_.-]+$")
+
+
+def watch_change(tool: str, tool_input: dict) -> dict | None:
+    """The PR a successful subscribe or unsubscribe call names, as owner/repo#N."""
+    owner, name, number = (tool_input.get(k) for k in ("owner", "repo", "pullNumber"))
+    if isinstance(number, str) and number.isascii() and number.isdigit():
+        number = int(number)
+    if type(number) is not int or number < 1:
+        return None
+    if not isinstance(owner, str) or not isinstance(name, str):
+        return None
+    owner, name = owner.lower(), name.lower()
+    if not GITHUB_NAME.match(owner) or not GITHUB_NAME.match(name):
+        return None
+    return {"pr": f"{owner}/{name}#{number}", "on": WATCH_TOOLS[tool]}
+
+
+def checkin_time(tool_input: dict, ts: float) -> float | None:
+    """When a send_later call fires. Reads `at` and `delay_minutes` only, never the message."""
+    at, delay = tool_input.get("at"), tool_input.get("delay_minutes")
+    if isinstance(at, str):
+        try:
+            when = datetime.fromisoformat(at.strip())
+        except ValueError:
+            return None
+        return when.timestamp() if when.tzinfo else None
+    if type(delay) in (int, float) and delay > 0:
+        return ts + 60 * delay
+    return None
+
+
 def is_first_prompt(session_id: str, state_dir: str) -> bool:
     """True the first time a session submits a prompt (decided by a marker file)."""
     safe = re.sub(r"[^\w-]", "_", session_id)[:100]
@@ -428,6 +481,9 @@ def is_first_prompt(session_id: str, state_dir: str) -> bool:
         return False
     except OSError:
         return True
+
+
+BRIDGE_ROLES = ("pi-bridge", "desktop-bridge")  # the tracker's permanent.ROLES
 
 
 def event_time(env: dict) -> float:
@@ -444,6 +500,8 @@ def build(hook: dict, env: dict, state_dir: str) -> dict | None:
     if not isinstance(kind, str) or not isinstance(sid, str) or not sid:
         return None
     cwd = hook.get("cwd") if isinstance(hook.get("cwd"), str) else ""
+    if cwd and opted_out(cwd):
+        return None
     repo = repo_from_remote(_git(cwd, "remote", "get-url", "origin")) if cwd else None
     branch = _git(cwd, "symbolic-ref", "--short", "HEAD") if cwd else ""
     refs: dict = {}
@@ -460,6 +518,9 @@ def build(hook: dict, env: dict, state_dir: str) -> dict | None:
         "branch": branch or None,
         "ts": event_time(env),
     }
+    # #168: a bridge host names its kind; anything else sends nothing.
+    if env.get("CLAUDE_TRACKER_ROLE") in BRIDGE_ROLES:
+        out["role"] = env["CLAUDE_TRACKER_ROLE"]
     if hook.get("agent_id"):
         out["agent_id"] = clip(hook["agent_id"], 100)
         out["agent_type"] = clip(hook.get("agent_type"), 100)
@@ -477,16 +538,33 @@ def build(hook: dict, env: dict, state_dir: str) -> dict | None:
         name = clip(hook.get("tool_name"), 100) or "tool"
         tool_input = hook.get("tool_input")
         out["tool"] = name
-        out["tool_summary"] = tool_summary(name, tool_input)
+        # The remote tools' inputs hold a message: the summary is the name alone.
+        remote = name.startswith(REMOTE_TOOLS)
+        out["tool_summary"] = clip(name, MAX_SUMMARY) if remote else tool_summary(name, tool_input)
         planned = plan_input(name, tool_input)
         if planned is not None:
             out["tool_input"] = planned
         if name == "TaskCreate" and kind == "PostToolUse":
             out["task_id"] = task_id(hook.get("tool_response"))
+        # Which session an archive call archives: the tracker drops the session
+        # from its card when it's its own (docs/design.md decision 16). Not
+        # unarchive_session, which shares the suffix.
+        if name == "archive_session" or name.endswith("__archive_session"):
+            target = tool_input.get("session_id") if isinstance(tool_input, dict) else None
+            if isinstance(target, str) and target.strip():
+                out["archive_target"] = clip(target, 100)
         if isinstance(tool_input, dict) and kind == "PreToolUse":
             found = pr_closes(name, tool_input, repo)
             if found:
                 refs["pr"] = found
+        if isinstance(tool_input, dict) and kind == "PostToolUse":
+            # Only a call that succeeded: a refused subscribe watches nothing.
+            change = watch_change(name, tool_input) if name in WATCH_TOOLS else None
+            if change:
+                out["watch"] = change
+            when = checkin_time(tool_input, out["ts"]) if name == SEND_LATER else None
+            if when is not None:
+                out["checkin_at"] = when
     elif kind == "Notification":
         out["message"] = clean(hook.get("message"), MAX_REPLY)
         out["notification_type"] = clip(hook.get("notification_type"), 40)
