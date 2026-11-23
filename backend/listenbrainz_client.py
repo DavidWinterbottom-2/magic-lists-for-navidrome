@@ -25,8 +25,10 @@ a 204), so its parser is deliberately tolerant.
 
 import logging
 import os
+import re
 import time
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 
 import httpx
 
@@ -42,7 +44,18 @@ SIMILAR_ALGORITHM = "session_based_days_9000_session_300_contribution_5_threshol
 LOVED_CACHE_TTL_SECONDS = 6 * 60 * 60
 LOVED_PAGE_SIZE = 100
 LOVED_MAX_PAGES = 10
+# Stats endpoints serve at most 100 rows per request; larger counts are paged.
+STATS_PAGE_SIZE = 100
 SIMILAR_ARTIST_LIMIT = 40
+# Labs artist names are community-edited and end up in the curator's prompt:
+# keep them short and on one line.
+MAX_ARTIST_NAME_LENGTH = 100
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]+")
+
+
+def _clean_name(value: Any) -> str:
+    """One-line, length-capped artist name (prompt-safe)."""
+    return _CONTROL_CHARS.sub(" ", str(value or "")).strip()[:MAX_ARTIST_NAME_LENGTH].strip()
 
 
 def parse_loved_tracks(data: Any) -> List[Dict[str, str]]:
@@ -107,7 +120,9 @@ def parse_similar_artists(data: Any) -> List[Dict[str, Any]]:
     """Extract {name, mbid, match} rows from a Labs similar-artists payload.
 
     Rows are ranked by Labs' integer `score`, highest first (the seed itself and
-    nameless rows are dropped). `match` is the score as a string.
+    nameless rows are dropped). `match` is the score as a string. Names are
+    flattened to one line and capped at MAX_ARTIST_NAME_LENGTH characters, since
+    they are fed to the AI curator.
     """
     if not isinstance(data, list):
         return []
@@ -115,7 +130,7 @@ def parse_similar_artists(data: Any) -> List[Dict[str, Any]]:
     for entry in data:
         if not isinstance(entry, dict):
             continue
-        name = (entry.get("name") or "").strip()
+        name = _clean_name(entry.get("name"))
         mbid = entry.get("artist_mbid") or ""
         if not name or mbid == entry.get("reference_mbid"):
             continue
@@ -147,8 +162,9 @@ class ListenBrainzClient:
         return bool(self.username)
 
     @property
-    def user_enabled(self) -> bool:
-        return bool(self.username)
+    def _user(self) -> str:
+        """Username as one URL path segment (`/`, `?`, `#` and `..` can't escape it)."""
+        return quote(self.username, safe="")
 
     async def _get(self, url: str, params: Optional[Dict[str, Any]] = None, label: str = "") -> Optional[Any]:
         """GET one endpoint; JSON on 200, None on 204/any error (logged)."""
@@ -167,19 +183,23 @@ class ListenBrainzClient:
 
     async def loved_tracks(self) -> List[Dict[str, str]]:
         """The listener's loved tracks as parsed rows ([] when unconfigured/failed)."""
-        if not self.user_enabled:
+        if not self.enabled:
             return []
         if self._loved_cache and self._loved_cache[1] > time.monotonic():
-            return self._loved_cache[0]
+            return list(self._loved_cache[0])
 
         rows: List[Dict[str, str]] = []
         offset = 0
+        complete = True
         for _ in range(LOVED_MAX_PAGES):
             data = await self._get(
-                f"{self.api_root}/1/feedback/user/{self.username}/get-feedback",
+                f"{self.api_root}/1/feedback/user/{self._user}/get-feedback",
                 {"score": 1, "count": LOVED_PAGE_SIZE, "offset": offset, "metadata": "true"},
                 "get-feedback",
             )
+            if data is None and offset:
+                complete = False  # a later page failed: rows are partial
+                break
             page = parse_loved_tracks(data)
             if not page:
                 break
@@ -191,19 +211,31 @@ class ListenBrainzClient:
 
         if rows:
             logger.info(f"❤️ ListenBrainz: {len(rows)} loved track(s) for '{self.username}'")
-            self._loved_cache = (rows, time.monotonic() + LOVED_CACHE_TTL_SECONDS)
+            if complete:  # partial results are used once, not cached for hours
+                self._loved_cache = (list(rows), time.monotonic() + LOVED_CACHE_TTL_SECONDS)
         return rows
 
     async def top_tracks(self, range_: str = "half_yearly", limit: int = 200) -> List[Dict[str, str]]:
-        """The listener's top recordings, most-listened first ([] on 204/error)."""
-        if not self.user_enabled:
+        """The listener's top recordings, most-listened first ([] on 204/error).
+
+        Fetched in pages of STATS_PAGE_SIZE (the server's per-request cap) up to
+        `limit`; a failed later page keeps the rows already read.
+        """
+        if not self.enabled:
             return []
-        data = await self._get(
-            f"{self.api_root}/1/stats/user/{self.username}/recordings",
-            {"range": range_, "count": limit},
-            "top-recordings",
-        )
-        return parse_top_tracks(data)
+        rows: List[Dict[str, str]] = []
+        while len(rows) < limit:
+            count = min(STATS_PAGE_SIZE, limit - len(rows))
+            data = await self._get(
+                f"{self.api_root}/1/stats/user/{self._user}/recordings",
+                {"range": range_, "count": count, "offset": len(rows)},
+                "top-recordings",
+            )
+            page = parse_top_tracks(data)
+            rows.extend(page)
+            if len(page) < count:
+                break
+        return rows[:limit]
 
     async def similar_artists(self, artist_mbid: str, limit: int = SIMILAR_ARTIST_LIMIT) -> List[Dict[str, Any]]:
         """Artists similar to the seed MBID, ranked most-similar first."""
@@ -215,13 +247,3 @@ class ListenBrainzClient:
             "similar-artists",
         )
         return parse_similar_artists(data)[:limit]
-
-    async def listen_count(self) -> Optional[int]:
-        """Total listens for the user; None if unknown. Used by the health check."""
-        if not self.username:
-            return None
-        data = await self._get(f"{self.api_root}/1/user/{self.username}/listen-count", None, "listen-count")
-        try:
-            return int(data["payload"]["count"])
-        except (TypeError, KeyError, ValueError):
-            return None

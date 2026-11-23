@@ -31,9 +31,11 @@ exists today, no UI change, no merging of providers.
 
 ## Impact
 
-`backend/` (new client, radio, rediscover, main, health check, ai_client wording), `.env.example`, README,
+`backend/` (new client, `name_matching.py`, radio, rediscover, main, health check, `navidrome_client.py` artist
+MBID and track `mbid`, `track_scoring.py`/`lidarr_client.py` wording, ai_client wording), AGENTS.md, docs/code-style.md, `.env.example`, README,
 SETUP, docs/architecture.md, tests (replace ~80 Last.fm references with ListenBrainz fixtures),
-`pyproject.toml` version. Cross-repo: docker-infra compose.
+`pyproject.toml` version and coverage list, CI (`e2e` pinned to `ubuntu-24.04`), `scripts/generate-docs-map.py`
+(skips `openspec/changes/`). Cross-repo: docker-infra compose ([docker-infra#509](https://github.com/DavidWinterbottom-2/docker-infra/issues/509)).
 
 ## Deadline risk
 

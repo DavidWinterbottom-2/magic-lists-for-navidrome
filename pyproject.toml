@@ -63,6 +63,7 @@ include = [
     "backend/radio.py",
     "backend/track_scoring.py",
     "backend/listenbrainz_client.py",
+    "backend/name_matching.py",
     "backend/recipe_manager.py",
     "backend/ai_response.py",
     "backend/database.py",

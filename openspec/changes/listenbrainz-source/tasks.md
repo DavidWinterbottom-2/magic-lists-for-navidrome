@@ -4,10 +4,10 @@
 
 ## 1. Client and matching (tests first)
 - [x] 1.1 `name_matching.py` (moved helpers); update imports. Verify: existing folding tests pass unchanged.
-- [x] 1.2 `ListenBrainzClient`: parse helpers + `loved_track_keys`, `top_tracks`; 204/error/timeout → empty, errors not cached. Verify: fixture tests incl. 204, malformed, empty.
+- [x] 1.2 `ListenBrainzClient`: parse helpers + `loved_tracks` (rows), `top_tracks` (paged at the stats cap of 100); 204/error/timeout → empty, errors and partial pages not cached. Verify: fixture tests incl. 204, malformed, empty.
 
 ## 2. Loved boost and Re-Discover
-- [x] 2.1 `apply_loved_signal` uses the new client; MBID-first then name matching. Verify: tests for MBID match, name fallback, unconfigured.
+- [x] 2.1 `apply_loved_signal` uses the new client; MBID OR folded-name matching (lenient, agreed at test). Verify: tests for MBID match, conflicting MBIDs with equal names, name fallback, unconfigured.
 - [x] 2.2 Re-Discover top-tracks fallback, neutral label/mode. Verify: ported `test_rediscover_lastfm` cases pass; falls through below min.
 
 ## 3. Similar artists (droppable per 0.2)
@@ -15,9 +15,9 @@
 - [x] 3.2 Radio uses it; `ai_client` prompt wording provider-neutral. Verify: `test_radio*` ported; ranking and out-of-library filter asserted.
 
 ## 4. Removal, health, docs, release
-- [x] 4.1 Delete `lastfm_client.py`, `LASTFM_*`, Last.fm tests; ListenBrainz health check (never fails startup). Verify: `grep -ri lastfm` empty outside `docs/reviews/LOG.md`; health tests for all four states.
+- [x] 4.1 Delete `lastfm_client.py`, `LASTFM_*`, Last.fm tests; ListenBrainz health check (never fails startup). Verify: `grep -ri lastfm` empty outside `docs/reviews/LOG.md` and `openspec/`; health tests for all four states.
 - [x] 4.2 `.env.example`, README, SETUP, docs/architecture.md, AGENTS.md. Verify: grep above.
-- [x] 4.3 Bump 0.7.0 in `pyproject.toml`; full test suite + coverage gate + CI green. Verify: `version-bumped` passes.
+- [x] 4.3 Bump 0.7.0 in `pyproject.toml`; full test suite + coverage gate (now also covering `name_matching.py`) + CI green; `e2e` pinned to `ubuntu-24.04` (Playwright has no Chromium for 26.04). Verify: `version-bumped` passes.
 - [x] 4.4 (opened by the orchestrator as https://github.com/DavidWinterbottom-2/docker-infra/issues/509, stage:define) Open docker-infra follow-up issue (`LISTENBRAINZ_USERNAME`, optional `LISTENBRAINZ_URL` in `magiclists/docker-compose.yml`) at stage:define, linking #65.
 
 ## 5. Deploy (after merge)

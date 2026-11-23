@@ -449,7 +449,7 @@ Full annotated list in [`.env.example`](.env.example).
 
 | Variable | Notes |
 | --- | --- |
-| `LISTENBRAINZ_USERNAME` | Loved-track scoring, grounded Radio suggestions and the Re-Discover fallback. Username only, no token. Optional `LISTENBRAINZ_URL` for a self-hosted server |
+| `LISTENBRAINZ_USERNAME` | Loved-track scoring, grounded Radio suggestions and the Re-Discover fallback. Username only, no token. Optional `LISTENBRAINZ_URL` for a self-hosted server (similar artists always use the public LB Labs API) |
 | `LIDARR_URL` | Turns Radio album suggestions into Lidarr *Add New* links |
 | `LIDARR_API_KEY` / `LIDARR_QUALITY_PROFILE_ID` / `LIDARR_ROOT_FOLDER_PATH` | All three together turn that link into a direct "Add to Lidarr" API call |
 | `NAVIDROME_LIBRARY_ID` | Target one library; leave empty to use all of them |

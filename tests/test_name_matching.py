@@ -1,6 +1,6 @@
 """Tests for provider-neutral name matching and the loved-track signal.
 
-Covers key folding, MBID-first then name matching in `mark_loved`, and
+Covers key folding, lenient MBID-or-name matching in `mark_loved`, and
 `apply_loved_signal` wiring (ListenBrainz configured / unconfigured / failing).
 
     python -m pytest tests/test_name_matching.py
@@ -62,8 +62,8 @@ class MarkLovedTests(unittest.TestCase):
 
 
 class FakeLB:
-    def __init__(self, rows=None, user_enabled=True, raises=False):
-        self.rows, self.user_enabled, self.raises = rows or [], user_enabled, raises
+    def __init__(self, rows=None, enabled=True, raises=False):
+        self.rows, self.enabled, self.raises = rows or [], enabled, raises
 
     async def loved_tracks(self):
         if self.raises:
@@ -91,7 +91,7 @@ class ApplyLovedSignalTests(unittest.TestCase):
 
     def test_unconfigured_leaves_tracks_alone(self):
         tracks = [{"id": "1", "artist": "A", "title": "One"}]
-        self._run(FakeLB([{"artist": "A", "title": "One", "mbid": ""}], user_enabled=False), tracks)
+        self._run(FakeLB([{"artist": "A", "title": "One", "mbid": ""}], enabled=False), tracks)
         self.assertNotIn("loved", tracks[0])
 
     def test_empty_loved_list_is_fine(self):

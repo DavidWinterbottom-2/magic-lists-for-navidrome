@@ -350,15 +350,16 @@ async def apply_loved_signal(tracks):
          favourites, including any hearted from a client like Amperfy. Always
          applied; needs no configuration.
       2. ListenBrainz loved tracks — loves made on ListenBrainz. Applied only when
-         LISTENBRAINZ_USERNAME is set, since Navidrome doesn't sync its star there.
-         Matches by recording MBID when the library track has one, else by name.
+         LISTENBRAINZ_USERNAME is set (Navidrome's star may not reach ListenBrainz).
+         A track matches by recording MBID or by folded (artist, title); either is
+         enough (lenient matching, agreed at test for #65).
     """
     starred = mark_starred_loved(tracks)
     if starred:
         scheduler_logger.info(f"❤️ Marked {starred} starred track(s) as loved")
 
     client = get_listenbrainz_client()
-    if not client.user_enabled:
+    if not client.enabled:
         return
     loved = await client.loved_tracks()
     keys = {loved_key(r["artist"], r["title"]) for r in loved if r["artist"] and r["title"]}

@@ -52,8 +52,9 @@ def mark_loved(
     """Flag loved tracks in place. Returns the number newly marked.
 
     Sets `track['loved'] = True`, the exact signal `score_tracks_by_user_engagement`
-    already rewards (+50). A track matches by recording MBID when it carries one that
-    is in `loved_mbids`; otherwise by the folded (artist, title) key.
+    already rewards (+50). A track matches when its recording MBID is in
+    `loved_mbids` OR its folded (artist, title) key is in `loved_keys`; differing
+    MBIDs do not veto an equal name (lenient matching, agreed at test for #65).
     """
     if not loved_keys and not loved_mbids:
         return 0

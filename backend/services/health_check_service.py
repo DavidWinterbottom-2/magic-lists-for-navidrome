@@ -3,6 +3,12 @@ import httpx
 import asyncio
 import aiosqlite
 from typing import Dict, List, Any
+from urllib.parse import quote
+
+from ..errors import describe_exception
+from ..listenbrainz_client import DEFAULT_API_ROOT
+
+
 class HealthCheckService:
     """Service to perform startup system checks for MagicLists application"""
     
@@ -633,7 +639,7 @@ class HealthCheckService:
         """
         name = "ListenBrainz Integration"
         username = os.getenv("LISTENBRAINZ_USERNAME", "").strip()
-        root = (os.getenv("LISTENBRAINZ_URL") or "https://api.listenbrainz.org").strip().rstrip("/")
+        root = (os.getenv("LISTENBRAINZ_URL") or DEFAULT_API_ROOT).strip().rstrip("/")
 
         if not username:
             return {
@@ -645,7 +651,7 @@ class HealthCheckService:
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.get(f"{root}/1/user/{username}/listen-count")
+                response = await client.get(f"{root}/1/user/{quote(username, safe='')}/listen-count")
             if response.status_code == 404:
                 return {
                     "name": name,
@@ -672,7 +678,7 @@ class HealthCheckService:
             return {
                 "name": name,
                 "status": "warning",
-                "message": f"ListenBrainz is configured but the connectivity test failed: {str(e)}",
+                "message": f"ListenBrainz is configured but the connectivity test failed: {describe_exception(e)}",
                 "suggestion": f"Check your internet connection and that {root} is reachable from this container."
             }
 

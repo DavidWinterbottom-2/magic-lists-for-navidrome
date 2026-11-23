@@ -985,7 +985,7 @@ class NavidromeClient:
     async def get_similar_artists(self, artist_id: str, count: int = 20) -> List[Dict[str, Any]]:
         """Fetch artists similar to the given artist using the Subsonic getArtistInfo2 API
 
-        Similar-artist data is provided by Navidrome's external agents (e.g. its configured similarity agents).
+        Similar-artist data is provided by Navidrome's configured external agents.
         Only artists that exist in the local library carry a usable "id"; artists
         without an id are external suggestions and are skipped here.
 

@@ -148,7 +148,7 @@ data, and Re-Discover gains a listening-history fallback.
 
 ```bash
 LISTENBRAINZ_USERNAME=   # your ListenBrainz username, not your email
-# LISTENBRAINZ_URL=      # optional, self-hosted server; default https://api.listenbrainz.org
+# LISTENBRAINZ_URL=      # optional, self-hosted server; default https://api.listenbrainz.org (similar artists always use the public LB Labs API)
 ```
 
 Only public reads are used, so no token is needed. Leave `LISTENBRAINZ_USERNAME`

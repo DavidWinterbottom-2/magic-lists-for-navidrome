@@ -10,7 +10,7 @@ The app SHALL read ListenBrainz public data using `LISTENBRAINZ_USERNAME` and an
 
 ### Requirement: Failures never break a playlist build
 Any ListenBrainz error, timeout, non-JSON body or HTTP 204 (no stats yet) SHALL yield an empty result
-and a logged warning, never an exception to the caller.
+and a logged message (a warning; 204 is an expected state and logged at info), never an exception to the caller.
 
 #### Scenario: Stats not ready
 - **WHEN** top-tracks returns 204
@@ -42,7 +42,7 @@ whose folded name is already in the library, and pass the top 8 (ranked) as pref
 
 ### Requirement: Re-Discover uses ListenBrainz top tracks first
 Re-Discover's first fallback SHALL resolve ListenBrainz top recordings (about 6 months, up to 200) to library
-tracks, labelled with theme "Listening History Favourites" and mode `LISTENING_HISTORY_FALLBACK`. Fewer
+tracks (fetched in pages of up to 100, the stats endpoint's cap), labelled with theme "Listening History Favourites" and mode `LISTENING_HISTORY_FALLBACK`. Fewer
 resolved tracks than the existing minimum SHALL fall through to the next fallback.
 
 #### Scenario: Enough resolved
@@ -63,8 +63,8 @@ and SHALL NOT fail startup in any case.
 
 ### Requirement: Last.fm is removed
 No Last.fm client, env var, health check, doc mention or test SHALL remain, except historical records
-(`docs/reviews/LOG.md`).
+(`docs/reviews/LOG.md` and the OpenSpec change history under `openspec/`).
 
 #### Scenario: Repository scan
 - **WHEN** the repo is searched case-insensitively for `lastfm` or `last.fm`
-- **THEN** only `docs/reviews/LOG.md` matches
+- **THEN** only `docs/reviews/LOG.md` and files under `openspec/` match

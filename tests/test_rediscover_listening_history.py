@@ -29,9 +29,9 @@ class FakeSearchNav:
 
 
 class FakeListenBrainz:
-    def __init__(self, top, user_enabled=True):
+    def __init__(self, top, enabled=True):
         self._top = top
-        self.user_enabled = user_enabled
+        self.enabled = enabled
 
     async def top_tracks(self, range_="half_yearly", limit=200):
         return list(self._top)
@@ -100,7 +100,7 @@ class ListeningHistoryFallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await proc._listening_history_fallback("u", "s", None))
 
     async def test_none_when_username_not_configured(self):
-        lb = FakeListenBrainz([{"artist": "A", "title": "One"}], user_enabled=False)
+        lb = FakeListenBrainz([{"artist": "A", "title": "One"}], enabled=False)
         proc = _processor(nav=FakeSearchNav([_song("s1", "A", "One")]), listenbrainz=lb, min_tracks=1)
         self.assertIsNone(await proc._listening_history_fallback("u", "s", None))
 

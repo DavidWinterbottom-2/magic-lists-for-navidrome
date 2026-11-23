@@ -1072,7 +1072,7 @@ class ReDiscoverV2Processor:
         starred / most-played fallbacks unchanged.
         """
         client = self.listenbrainz_client
-        if not client or not getattr(client, "user_enabled", False):
+        if not client or not getattr(client, "enabled", False):
             return None
 
         try:

@@ -47,7 +47,7 @@ class _Nav:
 
 class _LB:
     def __init__(self, top):
-        self._top, self.user_enabled, self.calls = top, True, []
+        self._top, self.enabled, self.calls = top, True, []
 
     async def top_tracks(self, range_="half_yearly", limit=200):
         self.calls.append((range_, limit))
