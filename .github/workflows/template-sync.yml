@@ -55,13 +55,13 @@ jobs:
 
       # Check out with the PAT: checkout saves its token as the git credential,
       # and only the PAT may push .github/workflows/* files.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           token: ${{ secrets.TEMPLATE_SYNC_TOKEN }}
           ref: ${{ github.event.repository.default_branch }}
 
       - name: Fetch the template (private → needs a read token)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: DavidWinterbottom-2/devcontainer-sandbox
           token: ${{ secrets.TEMPLATE_SYNC_TOKEN }}

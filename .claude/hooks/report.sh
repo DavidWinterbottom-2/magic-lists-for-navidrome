@@ -7,6 +7,9 @@
 # post itself gives up after 3 seconds. Outside the custom cloud environment
 # CLAUDE_EVENTS_URL or CLAUDE_EVENTS_TOKEN is unset and it does nothing. A repo
 # opts out by committing an empty .claude/tracker-off next to this hooks folder.
+# The managed bootstrap (#146) also runs a served copy from its cache folder,
+# where this own-folder check finds nothing; report.py's repo-level check
+# (.claude/tracker-off at the event's git top level) covers that copy.
 [ -n "${CLAUDE_EVENTS_URL:-}" ] && [ -n "${CLAUDE_EVENTS_TOKEN:-}" ] || exit 0
 [ -e "$(dirname "$0")/../tracker-off" ] && exit 0
 command -v python3 >/dev/null 2>&1 || exit 0

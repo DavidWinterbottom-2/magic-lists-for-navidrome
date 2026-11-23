@@ -27,9 +27,11 @@ Ask / confirm:
 ## 1. Deployment files (in docker-infra)
 
 Under `<host>/services/<name>/`, mirror an existing service (e.g. `ynab-ingestor`):
-- `docker-compose.yml` — pull `ghcr.io/davidwinterbottom-2/<name>:latest`, join the
-  external `docker-infra` network, expose a port, `restart: unless-stopped`, a
-  healthcheck, and a bind-mounted data volume if needed.
+- `docker-compose.yml` — pull `ghcr.io/davidwinterbottom-2/<name>:${<NAME>_SHA:-latest}`
+  with the label `com.centurylinklabs.watchtower.enable=false` (a first-party image is
+  SHA-pinned and out of Watchtower, so only the gated `issue-stages` deploy puts it live;
+  see `new-service-checklist` step 1), join the external `docker-infra` network, expose a
+  port, `restart: unless-stopped`, a healthcheck, and a bind-mounted data volume if needed.
 - `Makefile` — set `SERVICE_NAME` / `SERVICE_PORT` (+ optional `SERVICE_DESC` and knobs)
   and `include ../service-common.mk` (first-party web app) or `mcp-common.mk` (MCP server)
   so it exposes the standard targets
@@ -37,7 +39,7 @@ Under `<host>/services/<name>/`, mirror an existing service (e.g. `ynab-ingestor
 - `README.md` + `.env.example`.
 
 If the repo is a deployed image, ensure it has a `publish.yml` (GHCR build on push to
-`main`) in its **own** repo, plus the §4 **`image`** PR check: build the image, run it, and
+`main`, tagging both `:latest` and `:<full-sha>`, the tag the deploy pulls) in its **own** repo, plus the §4 **`image`** PR check: build the image, run it, and
 fail unless `/health` reports the declared version (the template's `ships_image` job, or
 `asset-overview`'s). Once `image` has reported on a PR, add it to `main`'s required checks
 (`configure-branch-protection`, "Adding a check").

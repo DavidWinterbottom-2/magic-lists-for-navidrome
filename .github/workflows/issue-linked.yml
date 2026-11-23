@@ -40,6 +40,6 @@ jobs:
           elif printf '%s' "$text" | grep -qiP '^\s*No issue: trivial\s*$'; then
             echo "PR is marked trivial (no issue)."
           else
-            echo "::error::The PR description must name its issue (Closes #N / Part of owner/repo#N) or contain the line 'No issue: trivial' (REPO-STANDARDS §3)."
+            echo "::error::The PR description must name its issue (Part of #N / Closes #N; another repo: owner/repo#N) or contain the line 'No issue: trivial' (REPO-STANDARDS §3)."
             exit 1
           fi
