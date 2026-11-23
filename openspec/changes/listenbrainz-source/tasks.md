@@ -1,6 +1,6 @@
 ## 0. Probe (first; blocks the rest)
 - [x] 0.1 (probe output posted on #65 2026-11-22: A1 204 only, A2 and A3 confirmed, A4 not run and still open) Run `probe.sh` from a host that reaches ListenBrainz/MusicBrainz/Navidrome (orchestrator Pi bridge or David). Paste redacted output on #65; save trimmed JSON as test fixtures. Verify: A1–A4 each marked confirmed/refuted on the issue.
-- [ ] 0.2 **Decision point 2026-11-25:** if A3 or A4 is refuted or the probe is not run, drop group 3 to a follow-up issue and ship the rest.
+- [ ] 0.2 (deferred to after the test stage; depends on A4, one Navidrome `getArtist` call David still has to run) **Decision point 2026-11-25:** if A3 or A4 is refuted or the probe is not run, drop group 3 to a follow-up issue and ship the rest.
 
 ## 1. Client and matching (tests first)
 - [x] 1.1 `name_matching.py` (moved helpers); update imports. Verify: existing folding tests pass unchanged.
@@ -18,7 +18,7 @@
 - [x] 4.1 Delete `lastfm_client.py`, `LASTFM_*`, Last.fm tests; ListenBrainz health check (never fails startup). Verify: `grep -ri lastfm` empty outside `docs/reviews/LOG.md`; health tests for all four states.
 - [x] 4.2 `.env.example`, README, SETUP, docs/architecture.md, AGENTS.md. Verify: grep above.
 - [x] 4.3 Bump 0.7.0 in `pyproject.toml`; full test suite + coverage gate + CI green. Verify: `version-bumped` passes.
-- [ ] 4.4 Open docker-infra follow-up issue (`LISTENBRAINZ_USERNAME`, optional `LISTENBRAINZ_URL` in `magiclists/docker-compose.yml`) at stage:define, linking #65.
+- [x] 4.4 (opened by the orchestrator as https://github.com/DavidWinterbottom-2/docker-infra/issues/509, stage:define) Open docker-infra follow-up issue (`LISTENBRAINZ_USERNAME`, optional `LISTENBRAINZ_URL` in `magiclists/docker-compose.yml`) at stage:define, linking #65.
 
 ## 5. Deploy (after merge)
 - [ ] 5.1 Pi `.env` + restart via orchestrator bridge; host `/health` shows new version. 5.2 David enables Navidrome ListenBrainz scrobbling. 5.3 Archive change; record cost vs estimate.
