@@ -10,7 +10,7 @@ The app SHALL read ListenBrainz public data using `LISTENBRAINZ_USERNAME` and an
 
 ### Requirement: Failures never break a playlist build
 Any ListenBrainz error, timeout, non-JSON body or HTTP 204 (no stats yet) SHALL yield an empty result
-and a logged message (a warning; 204 is an expected state and logged at info), never an exception to the caller.
+and a logged message (a warning; 204 is an expected state and logged at info), never an exception to the caller. A failure after the first page of a paged lookup keeps the rows already read.
 
 #### Scenario: Stats not ready
 - **WHEN** top-tracks returns 204
