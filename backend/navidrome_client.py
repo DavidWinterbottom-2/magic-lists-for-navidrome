@@ -364,6 +364,7 @@ class NavidromeClient:
                             "id": song.get("id"),
                             "title": song.get("title"),
                             "artist": artist_name,  # Include artist name for AI processing
+                            "mbid": song.get("musicBrainzId"),
                             "artist_id": artist_id,
                             "album": album_name,
                             "year": song.get("year", album_year),
