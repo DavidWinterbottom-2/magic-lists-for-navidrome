@@ -275,5 +275,16 @@ class HealthDetailTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("listens", r["message"])
 
 
+class LenientLovedMatchingTests(unittest.TestCase):
+    """Agreed at test (S1): MBID OR name is enough; differing MBIDs do not veto."""
+
+    def test_conflicting_mbids_with_equal_names_still_match(self):
+        from backend.name_matching import loved_key, mark_loved
+        track = {"artist": "The Beatles", "title": "Hey Jude", "mbid": "AAAA-1"}
+        marked = mark_loved([track], {loved_key("Beatles", "hey jude")}, {"bbbb-2"})
+        self.assertEqual(marked, 1)
+        self.assertTrue(track["loved"])
+
+
 if __name__ == "__main__":
     unittest.main()

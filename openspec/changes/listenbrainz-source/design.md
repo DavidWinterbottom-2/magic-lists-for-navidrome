@@ -32,3 +32,5 @@ and the Last.fm removal still ship before 12-01.
 2. No MusicBrainz name-search fallback in v1 (D3).
 3. One PR; group 3 droppable at the 11-25 decision point.
 4. D5 (no caching of error/204 empties), D6 (`LISTENING_HISTORY_FALLBACK`, "Listening History Favourites") and version 0.7.0 with no new `CHANGELOG.md` (PR description carries the notes) accepted as written.
+
+- **Agreed at test (S1):** loved matching is lenient: MBID match OR folded-name match. Differing MBIDs with equal names still match, because ListenBrainz and Navidrome often hold different recording MBIDs for the same song.

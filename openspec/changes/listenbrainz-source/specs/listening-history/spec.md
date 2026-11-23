@@ -18,11 +18,15 @@ and a logged warning, never an exception to the caller.
 
 ### Requirement: Loved tracks boost every playlist type
 Tracks loved on ListenBrainz SHALL be flagged `loved` (the existing +50 score) in addition to Navidrome stars.
-Matching SHALL use the recording MBID when both sides have one, else the existing folded (artist, title) key.
+A track SHALL be loved if its recording MBID matches a loved recording's MBID OR its folded (artist, title) key matches a loved track's key (lenient: either is enough, and one does not veto the other).
 
 #### Scenario: MBID match
 - **WHEN** a library track carries a recording MBID equal to a loved recording's MBID
 - **THEN** it is marked loved even if the titles differ
+
+#### Scenario: Conflicting MBIDs, equal names
+- **WHEN** a library track and a loved recording carry different recording MBIDs but equal folded artist and title
+- **THEN** it is marked loved (agreed at test: lenient matching)
 
 #### Scenario: Name fallback
 - **WHEN** either side lacks an MBID but folded artist and title are equal
